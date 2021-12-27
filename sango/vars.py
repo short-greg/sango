@@ -3,6 +3,15 @@ from abc import ABC, abstractmethod
 from functools import singledispatchmethod
 from typing import TypeVar, Generic
 from itertools import chain
+import typing
+from dataclasses import dataclass
+from sango.nodes import data
+
+
+class _Undefined:
+    pass
+
+UNDEFINED = _Undefined()
 
 
 class BaseVar(ABC):
@@ -157,3 +166,30 @@ class Ref(object):
     @property
     def var(self, storage: Storage) -> Var:
         return Var(storage[self._var_name].value)
+
+
+@dataclass
+class Condition:
+    value: str
+
+
+class ConditionSet(object):
+
+    def __init__(self, conditions: typing.Iterable[Condition]=None):
+        if conditions is not None:
+            self._conditions = set(condition for condition in conditions)
+        else:
+            self._conditions = set()
+        
+    def satisfies(self, condition: Condition):
+        return condition in self._conditions
+    
+    def add(self, condition: Condition):
+        self._conditions.add(condition)
+    
+    def remove(self, condition: Condition):
+        self._conditions.remove(condition)
+
+    def __iter__(self):
+        for condition in self._conditions:
+            yield condition
