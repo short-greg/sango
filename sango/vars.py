@@ -1,6 +1,6 @@
 
 from abc import ABC, abstractmethod
-from functools import singledispatchmethod
+from functools import partial, partialmethod, singledispatchmethod
 from typing import TypeVar, Generic
 from itertools import chain
 import typing
@@ -13,8 +13,9 @@ class _Undefined:
 
 UNDEFINED = _Undefined()
 
+V = TypeVar('V')
 
-class BaseVar(ABC):
+class StoreVar(Generic[V]):
     
     @abstractmethod
     def value(self):
@@ -22,14 +23,17 @@ class BaseVar(ABC):
 
 # TODO: Make Var use a generic
 
-class Var(BaseVar):
+
+T = TypeVar('T')
+
+class Var(StoreVar[T]):
     
-    def __init__(self, value):
+    def __init__(self, value: T):
 
         self._value = value
 
     @property
-    def value(self):
+    def value(self) -> T:
         return self._value
 
     @value.setter
@@ -37,7 +41,7 @@ class Var(BaseVar):
         self._value = value
 
 
-class Shared(BaseVar):
+class Shared(StoreVar):
 
     def __init__(self, var: Var):
 
@@ -62,18 +66,32 @@ class AbstractStorage(ABC):
     def __getitem__(self, key) -> Var:
         raise NotImplementedError
     
+    @abstractmethod
     def items(self):
         raise NotImplementedError
 
+    @abstractmethod
     def keys(self):
         raise NotImplementedError
 
+    @abstractmethod
     def vars(self):
         raise NotImplementedError
 
+    @abstractmethod
     def get(self, key, default):
         raise NotImplementedError
 
+    @abstractmethod
+    def update_references(self, parent):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def add(self, var: Var):
+        raise NotImplementedError
+
+    def contains(self, key: str):
+        return key in self._data
 
 class Storage(AbstractStorage):
 
@@ -105,16 +123,85 @@ class Storage(AbstractStorage):
     def get(self, key, default):
         return self._data.get(key, default)
     
+    def update_references(self, parent: AbstractStorage):
+        
+        for k, v in self.items():
+            if isinstance(v, Ref):
+                pass
+                
     def __contains__(self, key: str):
+        return self.contains(key)
+    
+    def add(self, key: str, var: Var):
+        self._data[key] = var
+
+    def contains(self, key: str):
         return key in self._data
+
+Storage.__contains__ = Storage.contains
+
+
+class NullStorage(AbstractStorage):
+
+    def __init__(self):
+        self._data = {}
+
+    def __setitem__(self, key, value):
+        pass
+
+    def __getitem__(self, key) -> Var:
+        pass
+    
+    def items(self):
+        return self._data.items()
+
+    def keys(self):
+        return self._data.keys()
+
+    def vars(self):
+        return self._data.values()
+
+    def get(self, key, default):
+        return default
+    
+    def update_references(self, parent: AbstractStorage):
+        pass
+
+    def add(self, key: str, var: Var):
+        pass
+
+    def contains(self, key: str):
+        return False
+
+
+NullStorage.__contains__ = NullStorage.contains
+
+
+class Ref(object):
+
+    def __init__(self, var_name: str):
+
+        self._var_name = var_name
+
+    @property
+    def name(self):
+        return self._var_name
+
+    def shared(self, storage: Storage) -> Shared:
+
+        return Shared(storage[self._var_name])
+    
+    def var(self, storage: Storage) -> Var:
+        return Var(storage[self._var_name].value)
 
 
 class HierarchicalStorage(AbstractStorage):
 
-    def __init__(self, child: AbstractStorage, parent: AbstractStorage):
+    def __init__(self, child: AbstractStorage, parent: AbstractStorage=None):
 
-        self._parent = parent
+        self._parent = parent or NullStorage()
         self._child = child
+        self._child.update_references(self._parent)
 
     def __setitem__(self, key, value):
         
@@ -139,6 +226,10 @@ class HierarchicalStorage(AbstractStorage):
     def vars(self):
         for var in chain(self._child.vars(), self._parent.vars()):
             yield var
+    
+    def update_references(self, parent: AbstractStorage):
+        self._child.update_references(parent)
+        self._parent.update_references(parent)
 
     def get(self, key, default=None):
         
@@ -148,24 +239,24 @@ class HierarchicalStorage(AbstractStorage):
             return self._parent[key]
         return default
 
-    def __contains__(self, key: str):
-        return key in self._child or key in self._parent
+    def contains(self, key: str, recursive: bool=False):
+        if key in self._child:
+            return True
+        
+        if recursive:
+            return key in self._parent
+        return False
+
+    @singledispatchmethod
+    def add(self, key: str, var: Var):
+        self._child.add(key, var)
+
+    @add.register
+    def add(self, key: str, var: Ref):
+        self._child.add(Shared(self._parent.get(key, var.name)))
 
 
-class Ref(object):
-
-    def __init__(self, var_name: str):
-
-        self._var_name = var_name
-
-    @property
-    def shared(self, storage: Storage) -> Shared:
-
-        return Shared(storage[self._var_name])
-    
-    @property
-    def var(self, storage: Storage) -> Var:
-        return Var(storage[self._var_name].value)
+HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, recursive=False)
 
 
 @dataclass
@@ -193,3 +284,10 @@ class ConditionSet(object):
     def __iter__(self):
         for condition in self._conditions:
             yield condition
+
+
+class Args(object):
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs

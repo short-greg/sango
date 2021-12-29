@@ -1,11 +1,15 @@
 from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import InitVar
 from enum import Enum
+import functools
+import itertools
 import typing
-from functools import singledispatch
-from typing import Generic, TypeVar
-
-from sango.vars import Storage
+from functools import singledispatch, singledispatchmethod
+from typing import Any, Generic, Iterator, TypeVar
+from sango.vars import UNDEFINED, ConditionSet, HierarchicalStorage, Storage
+from vars import AbstractStorage, Args, HierarchicalStorage, NullStorage, Ref, Shared, StoreVar, Var
+from .utils import coalesce
+import random
 
 
 class Status(Enum):
@@ -13,123 +17,13 @@ class Status(Enum):
     FAILURE = 0
     SUCCESS = 1
     RUNNING = 2
+    READY = 3
+    DONE = 4
+    NONE = 5
 
-
-class Task(ABC):
-
-    @abstractmethod
-    def tick(self) -> Status:
-        pass
-
-    @abstractproperty
-    def cost(self) -> float:
-        pass
-
-    def __post_init__(self):
-        pass
-
-
-Task.__call__ = Task.tick
-
-
-class Tree(Task):
-
-    def __new__(cls):
-
-        # 1) get all items in the tree
-        # 2) make sure enter is specified
-        # 3) pass resuls to __init__ method for setting the object
-
-        pass
-
-    def __init__(self, enter: Task, data: dict, **kwargs):
-
-        # pass kwargs to post init
-
-        # call set attribute on all data
-        pass
-    
-    @abstractmethod
-    def post_condition(self):
-        pass
-
-    @abstractmethod
-    def pre_condition(self):
-        pass
-
-    @abstractmethod
-    def __post_init__(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def tick(self) -> Status:
-        pass
-
-    @abstractproperty
-    def cost(self) -> float:
-        pass
-
-
-@singledispatch
-def task(obj):
-    pass
-
-
-@task.register
-def _(obj: Task):
-    pass
-
-
-@task.register
-def _(obj: function):
-    pass
-
-
-@task.register
-def _(obj: Tree):
-    pass
-
-
-class Composite(Task):
-
-    @abstractproperty
-    def n(self) -> int:
-        pass
-
-
-class Action(Task):
-    
-    @abstractmethod
-    def tick(self):
-        raise NotImplementedError
-
-
-class Conditional(Task):
-
-    @abstractmethod
-    def tick(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def value(self):
-        pass
-
-
-def vdir(obj):
-    for x in dir(obj):
-        if not x.startswith('__'):
-            yield x, obj.__dict__[x]
-
-
-# def annotations(obj):
-#    return obj.__annotations__ if __annotations__ in obj else {}
-
-def _func():
-    pass
-
-
-def is_task(annotation: typing.Type, val):
-    return isinstance(val, Task) or issubclass(annotation, Task) or issubclass(val, Task):
+    @property
+    def done(self):
+        return self == Status.FAILURE or Status.SUCCESS
 
 
 def vals(cls):
@@ -145,98 +39,121 @@ def vals(cls):
         yield var, annotation, val, False
 
 
-def to_task(val) -> Task:
-
-    pass
-
-# def data(cls):
-#     for var in [x for x in dir(cls) if not x.startswith('__')]:
-#         pass
+@singledispatch
+def _update_var(val, storage: AbstractStorage):
+    return Var[Any](val)
 
 
-T = TypeVar('T')
+@_update_var.register
+def _(val: Ref, storage: AbstractStorage):
+    return val.shared(storage)
 
-class StoreVar(Generic[T]):
-    pass
+
+@_update_var.register
+def _(val: StoreVar, storage: AbstractStorage):
+    return val
 
 
-class Composite(Task):
+class ArgVars(object):
 
-    @property
-    def n(self):
-        return len(self._tasks)
-    
-    @classmethod
-    def __new__(cls, *args, **kwargs):
-
-        obj: Composite = super().__new__(cls)
+    def __init__(self, cls, args: dict, kwargs: dict):
         
-        tasks = []
-        data = {}
-        init_vars = {}
-        for i, (name, type_, value, is_task) in enumerate(vals(cls)):
+        self._init_vars = {}
+        self._args = []
+        self._args_by_name = {}
+        tasks: typing.List[TaskLoader] = []
+        i = 0
+        parent_storage = kwargs.get('_store') or NullStorage()
+        self._storage = HierarchicalStorage(Storage(), parent_storage)
+        for (name, type_, value, is_task) in enumerate(vals(cls)):
             
+            self._args.append((name, type_, value, is_task))
+            self._args_by_name[name] = (name, type_, value, is_task)
             if i < len(args):
                 val = args[i]
             else:
                 val = kwargs.get(name, value)
-            if is_task:
-                tasks[name] = to_task(val)
-            elif type_ is not None:
-                if issubclass(type_, InitVar):
-                    init_vars[name] = val
-                elif issubclass(type_, StoreVar):
-                    data[name] = val
-                else:
-                    obj.__setattr__(name, val)
 
-        obj._store = Storage(**data)
-        obj._tasks = tasks
-        obj._n = len(obj._tasks)
-        obj.__post_init__(**init_vars)
+            if val == UNDEFINED:
+                raise AttributeError(f"Value for {name} was not given.")
+            
+            if isinstance(value, TaskLoader):
+                tasks.append(value(val))
+            elif type_ is not None and issubclass(type_, InitVar):
+                self._init_vars[name] = val
+            elif isinstance(value, VarStorer):
+                self._storage.add(name, value(val).val)
+                value(val).store(name, self._storage)
+            i += 1
+
+        if i < len(self._args):
+            raise TypeError(f"{cls}() takes {i} positional arguments but {len(self._args)} were given") 
+
+        # data_defined = {key: _update_var(datum, parent_storage) for key, datum in data.items()}
+        # self._storage = HierarchicalStorage(Storage(**data_defined), parent_storage)
+        self._tasks = map(lambda task: task.load(self._storage), tasks)
+
+    @property
+    def tasks(self):
+        return self._tasks
+
+    @property
+    def init_vars(self):
+        return self._init_vars
+
+    @property
+    def store(self) -> Storage:
+        return self._storage
+    
+    def get(self, key):
+        return self._args_by_name[key]['value']
+
+
+class Task(ABC):
+
+    def __init__(self, store: Storage):
+        self._store = store
+    
+    @abstractmethod
+    def reset(self):
+        pass
+    
+    @abstractmethod
+    def tick(self) -> Status:
+        raise NotImplementedError
+
+    def __post_init__(self):
+        pass
+
+    def __getattribute__(self, key: str) -> Any:
+        store: HierarchicalStorage = super().__getattribute__('_store')
+        if store.contains(key, recursive=False):
+            v = store.get(key, recursive=False)
+        return super().__getattribute__(key)
+
+
+Task.__call__ = Task.tick
+
+
+def _func():
+    pass
+
+
+def is_task(annotation: typing.Type, val):
+    return isinstance(val, Task) or issubclass(annotation, Task) or issubclass(val, Task)
+
+
+class Atomic(Task):
+
+    def __new__(cls, *args, **kwargs):
+        arg_vars = ArgVars(cls, args, kwargs)
+        obj: Atomic = super().__new__(cls, store=arg_vars.store)
+        obj.__post_init__(**arg_vars.init_vars)
 
         return obj
 
 
-def storage(task: Task):
-    return task.__storage__
-
-
-def tasks(composite: Composite):
-    return composite.__tasks__
-
-
-class Sequence(Composite):
-
-    # TODO: Determine how to work in the planner
-    def __init__(self):
-        self._cur = None
-        self._cur_plan: typing.Iterable = None
-
-    def reset(self):
-        self._cur_plan: typing.Iterable = None
-    
-    def _plan(self):
-        return self._tasks
-
-    def tick(self):
-        
-        if self._cur_plan is None:
-            self._cur_plan = self._plan()
-        
-        i = self._plan.adv()
-        if i is None:
-            return Status.SUCCESS
-        status = self._tasks[i].tick()
-        if status == Status.FAILURE:
-            return Status.FAILURE
-        
-        if self._plan.end():
-            return Status.SUCCESS
-        return Status.RUNNING
-
-
-class Planner(object):
+class Planner(ABC):
     
     def __init__(self):
         pass
@@ -245,183 +162,370 @@ class Planner(object):
         pass
 
     def end(self):
+        pass
+    
+    def reset(self):
+        pass
+
+    @abstractproperty
+    def cur(self):
         pass
 
 
 class LinearPlanner(object):
 
-    def __init__(self, items: list):
+    def __init__(self, items: typing.List[Task]):
+        self._items = items
+        self._idx = 0
 
-        self._items = None
-        self._iter = None
-        self._ended = False
-        self._cur = None
-        self.reset(items)
-    
     def reset(self, items: list=None):
-
-        self._items = items if items is not None else self._items
-        self._iter = iter(self._items)
-        try:
-            self._cur = iter(self._items)
-            self._ended = False
-        except StopIteration:
-            self._cur = None
-            self._ended = True    
+        self._idx = 0
+        self._items = coalesce(items, self._items)
+        
+    def idx(self):
+        return self._idx
 
     def end(self):
-        if self._ended:
+        if len(self._idx) == len(self._items):
             return True
         return False
     
     def adv(self):
-        cur = self._cur
-        try:
-            self._cur = next(self._iter)
-        except StopIteration:
-            self._cur = None
-            self._ended = True    
-        return cur
+        if self._idx == len(self._items):
+            return False
+        self._idx += 1
+        return True
     
+    @property
+    def cur(self):
+        return self._items[self._idx]
 
-class SequenceTicker(ABC):
+    def rev(self):
+        if self._idx == 0:
+            return False
+        self._idx -= 1
+        return True
+
+
+def iterate_planner(planner: Planner) -> Iterator[Task]:
+
+    planner.reset()
+    
+    while planner.end() is False:
+        yield planner.cur
+        planner.adv()
+
+
+def shuffle(linear: LinearPlanner):
+
+    old_reset = linear.reset
+    def shuffle(items):
+        if items is not None:
+            items = [*items]
+            random.shuffle(items)
+        return items
+
+    def reset(self, items: list=None):
+        old_reset(self, shuffle(items))
+
+    linear.reset = reset
+    linear.reset()
+    return linear
+
+
+class Composite(Task):
+
+    def __init__(
+        self, tasks, store: Storage
+    ):
+        super().__init__(store)
+        self._cur = None
+        self._tasks = tasks
+        self._planner = LinearPlanner(tasks)
+
+    @property
+    def n(self):
+        return len(self._tasks)
+
+    def __init__(
+        self, tasks: typing.List[Task], store: Storage
+    ):
+        self._tasks: typing.List[Task] = tasks
+        self._store = store
+        self._n = len(tasks)
+    
+    @property
+    def tasks(self):
+        return list(**self._tasks)
+    
+    @property
+    def n(self):
+        return self._n
 
     @abstractmethod
+    def subtick(self) -> Status:
+        raise NotImplementedError
+
+    @property
+    def status(self):
+        return self._cur_status
+
+    def tick(self):
+        if self._cur_status.done():
+            return Status.DONE
+
+        status = self.subtick()
+        self._cur_status = status
+        return status
+    
+    def reset(self):
+        for task in self._tasks:
+            task.reset()
+    
+    def __new__(cls, *args, **kwargs):
+
+        arg_vars = ArgVars(cls, args, kwargs)
+        obj: Composite = super().__new__(cls, tasks=arg_vars.tasks, store=arg_vars.store)
+        obj.__post_init__(**arg_vars.init_vars)
+        return obj
+
+
+class Tree(Task):
+
+    def __new__(cls, *args, **kwargs):
+
+        arg_vars = ArgVars(cls, args, kwargs)
+        entry = arg_vars.get('entry')        
+        if entry is None:
+            try:
+                entry = vals["entry"]
+            except KeyError:
+                raise KeyError("Field entry was not defined.")
+        obj: Tree = super().__new__(cls, entry, store=arg_vars.store)
+        obj.__post_init__(**arg_vars.init_vars)
+        return obj
+    
+    def __init__(self, entry: Task, store: Storage):
+        self._entry = entry
+        self._store = store
+
+    def __post_init__(self):
+        pass
+
+    def tick(self) -> Status:        
+        self._entry.tick()
+
+
+class Action(Task):
+
+    @abstractmethod
+    def act(self):
+        raise NotImplementedError
+
     def tick(self):
         raise NotImplementedError
 
 
-class RandomSequenceTicker(SequenceTicker):
+@singledispatch
+def action(action, args: Args):
+    
+    def _(store: Storage):
+        return action(*args.args, **args.kwargs, _store=store)
 
+    return _
+
+
+@action.register
+def _(args: Args):
+    
+    def _(cls):
+        x = cls
+        def __new__(cls, store: Storage):
+            
+            x.__new__(*args.args, **args.kwargs, _store=store)
+
+        cls.__new__ = __new__
+
+    return _
+ 
+
+class Conditional(Task):
+
+    @abstractmethod
+    def check(self) -> bool:
+        raise NotImplementedError
+
+    def tick(self):
+        if self._cur_status.done:
+            return Status.DONE
+        self._cur_status = Status.SUCCESS if self.check() else Status.FAILURE
+        return self._cur_status
+
+
+# class ConditionalVar(Task, Var)
+
+# action(Args(Ref(''), Ref('')))
+
+# class ActionFunc(Action):
+
+#     func = InitVar()
+
+#     def __post_init__(self, func):
+#         return super().__post_init__()
+
+
+class TaskLoader(object):
+
+    def __init__(self, task: Task=UNDEFINED, args: Args=None, decorators=None):
+
+        self._task = task
+        self._args = args or Args()
+        self._decorators = decorators or []
+    
+    def load(self, storage: Storage):
+        task = self._task(
+            _store=storage.get('_store'), *self._args.args, **self._args.kwargs
+        )
+        for decorator in self._decorators:
+            task = decorator(task)
+        return task
+    
+    def add_decorator(self, decorator):
+        self._decorators.append(decorator)
+
+    def __call__(self, task: Task):
+        self._task = task
+        return self
+
+
+@singledispatch
+def task(t=None, args: Args=None, decorators=None):
+    return TaskLoader(t, args, decorators=decorators)
+
+
+# TODO: DEFINE THIS.
+# @task.register
+# def _(t: function, args: Args=None, decorators=None):
+#     return TaskLoader(t, args, decorators=decorators)
+
+
+@task.register
+def _(args: Args, decorators=None):
+    return TaskLoader(args=args, decorators=decorators)
+
+
+class VarStorer(object):
+
+    def __init__(self, val: Var):
+
+        self._val = val
+
+    @property
+    def val(self):
+        return self._val
+
+    @singledispatchmethod
+    def __call__(self, val):
+
+        self._val = Var(val)
+        return self
+
+    @__call__.register
+    def _(self, val: Ref):
+        self._val = val
+        return self
+
+    @__call__.register
+    def _(self, val: Var):
+        self._val = val
+        return self
+
+
+def var(val=UNDEFINED):    
+    return VarStorer(Var(val))
+
+
+class Sequence(Composite):
+
+    def reset(self):
+        self._planner.reset()
+    
     def _plan(self):
-        pass
+        return self._tasks
+
+    def subtick(self) -> Status:
+        if self._planner.end() is True:
+            return Status.NONE
+
+        status = self._planner.cur.tick()
+        if status == Status.FAILURE:
+            return Status.FAILURE
+        
+        if self._planner.end():
+            return Status.SUCCESS
+        return Status.RUNNING
 
 
 class Fallback(Composite):
 
-    def _plan(self):
-        return Plan(self._tasks)
+    def subtick(self) -> Status:
 
-    def tick(self):
+        if self._planner.end() is True:
+            return Status.NONE
         
-        if self._cur_plan is None:
-            self._cur_plan = self._plan()
-        
-        i = self._plan.adv()
-        if i is None:
-            return Status.SUCCESS
-        status = self._tasks[i].tick()
+        status = self._planner.cur.tick()
         if status == Status.SUCCESS:
             return Status.SUCCESS
         
-        if self._plan.end():
+        self._planner.adv()
+        if self._planner.end():
             return Status.FAILURE
         return Status.RUNNING
 
 
 class Parallel(Composite):
 
-    def __init__(self):
-        super().__init__()
-        self._n_running = None
-        self._succeeded = None
-        self._failed = None
+    def __init__(
+        self, tasks, store: Storage
+    ):
+        super().__init__(tasks, store)
+        self._statuses = []
+    
+    def status_total(self, status: Status):
+        return functools.reduce(lambda x, y: x + (1 if y == status else 0), self._statuses)
 
     def reset(self):
-        pass
+        super().reset()
+        self._statuses = []
 
-    def n_running(self):
-        return self._n_running
+    def subtick(self):
 
-    def n_successes(self) -> int:
-        return self._succeeded
-
-    def n_failures(self) -> int:
-        # need to add
-        return self._failed
-    
-    def tick(self):
-        success = True
-        finished = True
-        n_running = 0
-        if self._succeeded is None:
-            self._succeeded = 0
-            self._failed = 0
-
-        for task in self._tasks:
-            status = task.tick()
-            if status != Status.SUCCESS:
-                success = False
-            if status == Status.RUNNING:
-                finished = False
-                n_running += 1
-            if status == Status.SUCCESS:
-                self._succeeded += 1
-            if status == Status.FAILURE:
-                self._failed += 1
+        for i, task in enumerate(iterate_planner(self._planner)):
+            if i > len(self._statuses) - 1:
+                self._statuses.append(Status.RUNNING)
+            elif self._statuses[i] != Status.RUNNING:
+                continue
+            self._statuses.append(task.tick())
         
-        self._n_running = n_running
-        if finished is False:
+        if Status.RUNNING in self._statuses:
             return Status.RUNNING 
-            
-        if success:
-            return Status.SUCCESS
-        return Status.FAILURE
-        
 
-def success_on_first(parallel: Parallel):
-
-    def tick(self):
-        result = parallel.tick()
-        if result == Status.SUCCESS and parallel.n_successes > 0:
-            return Status.SUCCESS
-        return result
-
-    parallel.tick = tick
+        return Status.SUCCESS if Status.FAILURE not in self._statuses else Status.FAILURE
 
 
-def fail_on_first(parallel: Parallel):
+# class Fallback(Task):
 
-    def tick(self):
-        result = parallel.tick()
-        if result == Status.FAILURE and parallel.n_failures > 0: 
-            return Status.FAILURE
-        return result
+#     def __init__(self, nodes: typing.List[Task]):
 
-    parallel.tick = tick
+#         self._nodes = nodes
+#         self._cur: int = None
 
+#     def subtisk(self):
 
-class Fallback(Task):
-
-    def __init__(self, nodes: typing.List[Task]):
-
-        self._nodes = nodes
-        self._cur: int = None
-
-    def __choose__(self) -> int:
-        pass
-
-    def tick(self):
-        
-        # TODO: Find this out
-        cur = self.__choose__()
-
-        status = self._nodes[self._cur].tick()
-        if status == Status.SUCCESS:
-            return Status.SUCCESS
-        return Status.RUNNING
-
-
-# need to think about how to do this more
-# class State(Enum):
-#     pass
-
-
-# use for post conditioxn / pre condition
-# class Condition:
-
-#     def check(self, states: typing.List[State]):
-#         pass
+#         status = self._nodes[self._cur].tick()
+#         if status == Status.SUCCESS:
+#             return Status.SUCCESS
+#         return Status.RUNNING
 
 
 class Decorator(Task):
@@ -472,28 +576,94 @@ class Until(Decorator):
         return Status.RUNNING
 
 
-def neg(node: Task):
+class DecoratorWrapper(object):
+
+    def __init__(self, decorator_cls: typing.Type[Decorator]):
+        self._decorator_cls = decorator_cls
     
-    neg_ = Neg(node)
+    @singledispatchmethod
+    def __call__(self, node: Task):
+        obj = self._decorator_cls(node)
+        node.tick = obj.tick
+        return node
+
+    @__call__.register
+    def _(self, node: TaskLoader):
+        node.add_decorator(self._decorator_cls)
+        return node
+
+
+neg = DecoratorWrapper(Neg)
+fail = DecoratorWrapper(Fail)
+success = DecoratorWrapper(Success)
+until = DecoratorWrapper(Until)
+
+
+class ParallelDecorator(Decorator):
+
+    def __init__(self, node: Parallel):
+        self._node = node
+
+
+class SucceedOnFirst(ParallelDecorator):
+
+    def tick(self):
+        result = self._node.tick()
+        if result == Status.SUCCESS and self._node.status_total(Status.SUCCESS) > 0:
+            return Status.SUCCESS
+        return result
+
+
+class FailOnFirst(ParallelDecorator):
+
+    def tick(self):
+
+        status = self._node.tick()
+        if status == Status.FAILURE and self._node.status_total(Status.FAILURE) > 0: 
+            return Status.FAILURE
+        return status
+
+
+succeeed_on_first = DecoratorWrapper(SucceedOnFirst)
+fail_on_first = DecoratorWrapper(FailOnFirst)
+
+# class t(Tree):
     
-    node.tick = neg_.tick
+#     class entry(Sequence):
+#         
+#         # TODO: Add in meta
+#         class meta:
+#           postcondition = ConditionSet()
+#           cost
+#         x: Action = task(act, ref(""), ref(""))
+#         y: Action = task(act, ref(""), ref(""))
+#         x: Conditional = UNDEFINED
+#         xx: Conditional = False
+        
+#         @action
+#         def z(storage: Storage):
+#             pass
+            
+#         class y(Action):
+#             pass
 
 
-def fail(node: Task):
+# def vdir(obj):
+#     for x in dir(obj):
+#         if not x.startswith('__'):
+#             yield x, obj.__dict__[x]
+
+
+# def ttt(cls):
+
+#     __old_init__ = cls.__init__
+#     def __init__(self):
+#         self.x = 1
+#         __old_init__(self)
     
-    fail_ = Fail(node)
-    node.tick = fail_.tick
+#     cls.__init__ = __init__
+#     return cls
 
-
-def success(node: Task):
-    
-    success_ = Success
-    node.tick = success_.tick
-
-
-def until(node: Task):
-    
-    until_ = Until(node)
-    node.tick = until_.tick
-
-
+# @ttt
+# class Y:
+#     pass
