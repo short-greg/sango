@@ -5,7 +5,6 @@ from typing import TypeVar, Generic
 from itertools import chain
 import typing
 from dataclasses import dataclass
-from sango.nodes import data
 
 
 class _Undefined:
@@ -54,6 +53,13 @@ class Shared(StoreVar):
     @value.setter
     def value(self, value):
         self._var.value = value
+
+
+class InitVar(object):
+
+    def __init__(self, value):
+
+        self.value = value
 
 
 class AbstractStorage(ABC):

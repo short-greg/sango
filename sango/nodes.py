@@ -1,15 +1,15 @@
 from abc import ABC, abstractmethod, abstractproperty
-from dataclasses import InitVar
 from enum import Enum
 import functools
 import itertools
 import typing
-from functools import singledispatch, singledispatchmethod
+from functools import partial, singledispatch, singledispatchmethod
 from typing import Any, Generic, Iterator, TypeVar
 from sango.vars import UNDEFINED, ConditionSet, HierarchicalStorage, Storage
-from vars import AbstractStorage, Args, HierarchicalStorage, NullStorage, Ref, Shared, StoreVar, Var
+from .vars import AbstractStorage, Args, HierarchicalStorage, NullStorage, Ref, Shared, StoreVar, Var, InitVar
 from .utils import coalesce
 import random
+from functools import wraps
 
 
 class Status(Enum):
@@ -23,16 +23,26 @@ class Status(Enum):
 
     @property
     def done(self):
-        return self == Status.FAILURE or Status.SUCCESS
+        return self == Status.FAILURE or Status.SUCCESS or Status.DONE
+
+
+# TODO: Probably remove.. I don't think I need this now
+def is_task(annotation: typing.Type, val):
+    if annotation is None:
+        return False
+    return isinstance(val, TaskLoader)
 
 
 def vals(cls):
 
-    annotations = cls.__annotations__
+    try:
+        annotations = cls.__annotations__
+    except AttributeError:
+        annotations = {}
 
     for var in [x for x in dir(cls) if not x.startswith('__')]:
         annotation = annotations.get(var, None)
-        val = cls.__dict__[var]
+        val = getattr(cls, var)
         is_task_ = is_task(annotation, val)
         if is_task_:
             yield var, annotation, val, True
@@ -54,59 +64,144 @@ def _(val: StoreVar, storage: AbstractStorage):
     return val
 
 
-class ArgVars(object):
+class ArgFilter(ABC):
 
-    def __init__(self, cls, args: dict, kwargs: dict):
+    @abstractmethod
+    def filter(self, name, annotation, value):
+        raise NotImplementedError
+
+
+class TypeFilter(ArgFilter):
+
+    def __init__(self, arg_type: typing.Type):
+        self._arg_type = arg_type
+    
+    def filter(self, name: str, annotation: typing.Type, value):
+        return isinstance(value, self._arg_type)
+
+
+class ArgManager(object):
+
+    def __init__(self, filters: typing.List[ArgFilter]):
         
-        self._init_vars = {}
-        self._args = []
-        self._args_by_name = {}
-        tasks: typing.List[TaskLoader] = []
-        i = 0
-        parent_storage = kwargs.get('_store') or NullStorage()
-        self._storage = HierarchicalStorage(Storage(), parent_storage)
-        for (name, type_, value, is_task) in enumerate(vals(cls)):
+        self._filters = filters
+
+
+        # self._init_vars = {}
+        # self._args = []
+        # self._args_by_name = {}
+        # self._tasks: typing.Dict[str, TaskLoader] = {}
+        # self._vars: typing.Dict[str, VarStorer] = {}
+        # i = 0
+        # # parent_storage = kwargs.get('_store') or NullStorage()
+        # self._storage = HierarchicalStorage(Storage(), parent_store)
+        # for (name, type_, value, is_task) in vals(cls):
             
-            self._args.append((name, type_, value, is_task))
-            self._args_by_name[name] = (name, type_, value, is_task)
-            if i < len(args):
-                val = args[i]
-            else:
-                val = kwargs.get(name, value)
 
-            if val == UNDEFINED:
-                raise AttributeError(f"Value for {name} was not given.")
-            
-            if isinstance(value, TaskLoader):
-                tasks.append(value(val))
-            elif type_ is not None and issubclass(type_, InitVar):
-                self._init_vars[name] = val
-            elif isinstance(value, VarStorer):
-                self._storage.add(name, value(val).val)
-                value(val).store(name, self._storage)
-            i += 1
+        #     val = kwargs.get(name, value)
 
-        if i < len(self._args):
-            raise TypeError(f"{cls}() takes {i} positional arguments but {len(self._args)} were given") 
 
+
+        #     self._args.append((name, type_, value, is_task))
+        #     self._args_by_name[name] = (name, type_, value, is_task)
+        #     if i < len(args):
+        #         val = args[i]
+        #     else:
+        #         val = kwargs.get(name, value)
+
+        #     if val == UNDEFINED:
+        #         raise AttributeError(f"Value for {name} was not given.")
+        #     if isinstance(value, TaskLoader) and value is not val:
+        #         self._tasks[name] = value(val)
+        #     elif isinstance(value, TaskLoader):
+        #         self._tasks[name] = val
+        #     elif isinstance(val, InitVar):
+        #         self._init_vars[name] = val.value
+        #     elif isinstance(value, VarStorer):
+        #         self._vars[name] = value
+        #         # self._storage.add(name, value(val).val)
+        #         # value(val).store(name, self._storage)
+        #     i += 1
+
+        # if i < len(self._args):
+        #     raise TypeError(f"{cls}() takes {i} positional arguments but {len(self._args)} were given") 
+
+    
         # data_defined = {key: _update_var(datum, parent_storage) for key, datum in data.items()}
         # self._storage = HierarchicalStorage(Storage(**data_defined), parent_storage)
-        self._tasks = map(lambda task: task.load(self._storage), tasks)
+        # self._tasks = {k: task.load(self._storage) for k, task in tasks.items()}
 
-    @property
-    def tasks(self):
-        return self._tasks
+    def _run_filters(self, name, type_, value):
 
-    @property
-    def init_vars(self):
-        return self._init_vars
+        for filter in self._filters:
+            if filter.filter(name, type_, value):
+                return True
 
-    @property
-    def store(self) -> Storage:
-        return self._storage
+        return False
+
+    def filter(self, cls):
+        result_kwargs = {}
+        for (name, type_, value, is_task) in vals(cls):
+            if self._run_filters(name, type_, value):
+                result_kwargs[name] = value
+        return result_kwargs
+
+            # val = kwargs.get(name, value)
+            # result_kwargs[]
+            
+
+
+    # @property
+    # def vars(self):
+    #     return self._vars
+
+    # @property
+    # def tasks(self):
+    #     return self._tasks
+
+    # @property
+    # def init_vars(self):
+    #     return self._init_vars
+
+    # # @property
+    # # def store(self) -> Storage:
+    # #     return self._storage
     
-    def get(self, key):
-        return self._args_by_name[key]['value']
+    # def get(self, key):
+    #     return self._args_by_name[key]['value']
+
+# post_init <- use args/kwargs
+# get all vars/tasks etc from kwargs only
+
+
+class AtomicMeta(type):
+
+    def __call__(cls, *args, **kw):
+
+        self = cls.__new__(*args, **kw)
+        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
+        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
+        cls.__init__(self, *args, **kw)
+    
+
+class TreeMeta(type):
+
+    def __call__(cls, *args, **kw):
+
+        self = cls.__new__(*args, **kw)
+        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
+        kw['entry'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)['entry']
+        cls.__init__(self, *args, **kw)
+
+
+class CompositeMeta(type):
+
+    def __call__(cls, *args, **kw):
+        self = cls.__new__(*args, **kw)
+        vars = ArgManager(TypeFilter(VarStorer)).filter(cls)
+        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
+        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
+        cls.__init__(self, *args, **kw)
 
 
 class Task(ABC):
@@ -126,9 +221,13 @@ class Task(ABC):
         pass
 
     def __getattribute__(self, key: str) -> Any:
-        store: HierarchicalStorage = super().__getattribute__('_store')
-        if store.contains(key, recursive=False):
-            v = store.get(key, recursive=False)
+        try:
+            store: HierarchicalStorage = super().__getattribute__('_store')
+            if store.contains(key, recursive=False):
+                v = store.get(key, recursive=False)
+                return v
+        except AttributeError:
+            pass
         return super().__getattribute__(key)
 
 
@@ -139,18 +238,20 @@ def _func():
     pass
 
 
-def is_task(annotation: typing.Type, val):
-    return isinstance(val, Task) or issubclass(annotation, Task) or issubclass(val, Task)
-
-
 class Atomic(Task):
 
-    def __new__(cls, *args, **kwargs):
-        arg_vars = ArgVars(cls, args, kwargs)
-        obj: Atomic = super().__new__(cls, store=arg_vars.store)
-        obj.__post_init__(**arg_vars.init_vars)
+    __metaclass__ = AtomicMeta
 
-        return obj
+    # def __new__(cls, *args, **kwargs):
+    #     arg_vars = ArgVars(cls, args, kwargs)
+    #     obj: Atomic = object.__new__(cls)
+    #     print('Before init')
+    #     # obj.__init__(store=arg_vars.store)
+    #     print('After init')
+    #     # obj.__post_init__(**arg_vars.init_vars)
+    #     print('After post init')
+
+    #     return obj
 
 
 class Planner(ABC):
@@ -235,24 +336,25 @@ def shuffle(linear: LinearPlanner):
 
 class Composite(Task):
 
+    __metaclass__ = CompositeMeta
+
     def __init__(
-        self, tasks, store: Storage
+        self, tasks, store: Storage, planner: Planner=None
     ):
         super().__init__(store)
-        self._cur = None
         self._tasks = tasks
-        self._planner = LinearPlanner(tasks)
+        self._planner = planner or LinearPlanner(tasks)
 
     @property
     def n(self):
         return len(self._tasks)
 
-    def __init__(
-        self, tasks: typing.List[Task], store: Storage
-    ):
-        self._tasks: typing.List[Task] = tasks
-        self._store = store
-        self._n = len(tasks)
+    # def __init__(
+    #     self, tasks: typing.List[Task], store: Storage
+    # ):
+    #     self._tasks: typing.List[Task] = tasks
+    #     self._store = store
+    #     self._n = len(tasks)
     
     @property
     def tasks(self):
@@ -282,28 +384,29 @@ class Composite(Task):
         for task in self._tasks:
             task.reset()
     
-    def __new__(cls, *args, **kwargs):
+    # def __new__(cls, *args, **kwargs):
 
-        arg_vars = ArgVars(cls, args, kwargs)
-        obj: Composite = super().__new__(cls, tasks=arg_vars.tasks, store=arg_vars.store)
-        obj.__post_init__(**arg_vars.init_vars)
-        return obj
+    #     arg_vars = ArgVars(cls, args, kwargs)
+    #     obj: Composite = super().__new__(cls, tasks=arg_vars.tasks, store=arg_vars.store)
+    #     obj.__post_init__(**arg_vars.init_vars)
+    #     return obj
 
 
 class Tree(Task):
 
-    def __new__(cls, *args, **kwargs):
+    __metaclass__ = TreeMeta
+    # def __new__(cls, *args, **kwargs):
 
-        arg_vars = ArgVars(cls, args, kwargs)
-        entry = arg_vars.get('entry')        
-        if entry is None:
-            try:
-                entry = vals["entry"]
-            except KeyError:
-                raise KeyError("Field entry was not defined.")
-        obj: Tree = super().__new__(cls, entry, store=arg_vars.store)
-        obj.__post_init__(**arg_vars.init_vars)
-        return obj
+    #     arg_vars = ArgVars(cls, args, kwargs)
+    #     entry = arg_vars.get('entry')        
+    #     if entry is None:
+    #         try:
+    #             entry = vals["entry"]
+    #         except KeyError:
+    #             raise KeyError("Field entry was not defined.")
+    #     obj: Tree = super().__new__(cls, entry, store=arg_vars.store)
+    #     obj.__post_init__(**arg_vars.init_vars)
+    #     return obj
     
     def __init__(self, entry: Task, store: Storage):
         self._entry = entry
@@ -316,7 +419,7 @@ class Tree(Task):
         self._entry.tick()
 
 
-class Action(Task):
+class Action(Atomic):
 
     @abstractmethod
     def act(self):
@@ -349,11 +452,14 @@ def _(args: Args):
     return _
  
 
-class Conditional(Task):
+class Conditional(Atomic):
 
     @abstractmethod
     def check(self) -> bool:
         raise NotImplementedError
+    
+    def reset(self):
+        pass
 
     def tick(self):
         if self._cur_status.done:
@@ -376,16 +482,18 @@ class Conditional(Task):
 
 class TaskLoader(object):
 
-    def __init__(self, task: Task=UNDEFINED, args: Args=None, decorators=None):
+    def __init__(self, task: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):
 
         self._task = task
         self._args = args or Args()
         self._decorators = decorators or []
     
     def load(self, storage: Storage):
+        print('Task: ', self._task)
         task = self._task(
-            _store=storage.get('_store'), *self._args.args, **self._args.kwargs
+            _store=storage, *self._args.args, **self._args.kwargs
         )
+        print('Loaded')
         for decorator in self._decorators:
             task = decorator(task)
         return task
@@ -513,119 +621,95 @@ class Parallel(Composite):
         return Status.SUCCESS if Status.FAILURE not in self._statuses else Status.FAILURE
 
 
-# class Fallback(Task):
+def neg(node: Task):
 
-#     def __init__(self, nodes: typing.List[Task]):
-
-#         self._nodes = nodes
-#         self._cur: int = None
-
-#     def subtisk(self):
-
-#         status = self._nodes[self._cur].tick()
-#         if status == Status.SUCCESS:
-#             return Status.SUCCESS
-#         return Status.RUNNING
-
-
-class Decorator(Task):
-
-    def __init__(self, node: Task):
-        self._node = node
-    
-    def wrapped(self):
-        return self._node
-    
-    @abstractproperty
-    def wrapped(self):
-        pass
-
-
-class Neg(Decorator):
-
+    old_tick = node.tick
+    @wraps(node.tick)
     def tick(self):
-        status = self._node.tick()
+        status = old_tick(self)
         if status == Status.SUCCESS:
             return Status.FAILURE
         elif status == Status.FAILURE:
             return Status.SUCCESS
-        return Status.RUNNING
+        return status
+    
+    node.tick = tick
+    return node
 
 
-class Fail(Decorator):
+def fail(node: Task):
 
+    old_tick = node.tick
+    @wraps(node.tick)
     def tick(self):
-        self._node.tick()
+        old_tick(self)
         return Status.FAILURE
+    
+    node.tick = tick
+    return node
 
 
-class Success(Decorator):
+def succeed(node: Task):
 
+    old_tick = node.tick
+    @wraps(node.tick)
     def tick(self):
-        self._node.tick()
+        old_tick(self)
         return Status.SUCCESS
+    
+    node.tick = tick
+    return node
 
 
-class Until(Decorator):
+def until(node: Task):
 
+    old_tick = node.tick
+    @wraps(node.tick)
     def tick(self):
-
-        status = self._node.tick()
+        status = old_tick(self)
         if status == Status.SUCCESS:
             return status
         return Status.RUNNING
-
-
-class DecoratorWrapper(object):
-
-    def __init__(self, decorator_cls: typing.Type[Decorator]):
-        self._decorator_cls = decorator_cls
     
-    @singledispatchmethod
-    def __call__(self, node: Task):
-        obj = self._decorator_cls(node)
-        node.tick = obj.tick
-        return node
-
-    @__call__.register
-    def _(self, node: TaskLoader):
-        node.add_decorator(self._decorator_cls)
-        return node
+    node.tick = tick
+    return node
 
 
-neg = DecoratorWrapper(Neg)
-fail = DecoratorWrapper(Fail)
-success = DecoratorWrapper(Success)
-until = DecoratorWrapper(Until)
+def succeed_on_first(node: Parallel):
 
-
-class ParallelDecorator(Decorator):
-
-    def __init__(self, node: Parallel):
-        self._node = node
-
-
-class SucceedOnFirst(ParallelDecorator):
-
+    old_tick = node.tick
+    @wraps(node.tick)
     def tick(self):
-        result = self._node.tick()
-        if result == Status.SUCCESS and self._node.status_total(Status.SUCCESS) > 0:
+        status = old_tick(self)
+        if status == Status.SUCCESS and node.status_total(Status.SUCCESS) > 0:
             return Status.SUCCESS
-        return result
+        return status
+    
+    node.tick = tick
+    return node
 
 
-class FailOnFirst(ParallelDecorator):
+def succeed_on_first(node: Parallel):
 
+    old_tick = node.tick
+    @wraps(node.tick)
     def tick(self):
-
-        status = self._node.tick()
-        if status == Status.FAILURE and self._node.status_total(Status.FAILURE) > 0: 
+        status = old_tick(self)
+        if status == Status.FAILURE and node.status_total(Status.FAILURE) > 0:
             return Status.FAILURE
         return status
+    
+    node.tick = tick
+    return node
 
 
-succeeed_on_first = DecoratorWrapper(SucceedOnFirst)
-fail_on_first = DecoratorWrapper(FailOnFirst)
+def loads(decorator):
+    def _(loader: TaskLoader):
+
+        loader.add_decorator(decorator)
+        return loader
+    return _
+
 
 # class t(Tree):
     
@@ -667,3 +751,97 @@ fail_on_first = DecoratorWrapper(FailOnFirst)
 # @ttt
 # class Y:
 #     pass
+
+# class Fallback(Task):
+
+#     def __init__(self, nodes: typing.List[Task]):
+
+#         self._nodes = nodes
+#         self._cur: int = None
+
+#     def subtisk(self):
+
+#         status = self._nodes[self._cur].tick()
+#         if status == Status.SUCCESS:
+#             return Status.SUCCESS
+#         return Status.RUNNING
+
+
+# class Decorator(Task):
+
+#     def __init__(self, node: Task):
+#         self._node = node
+    
+#     def wrapped(self):
+#         return self._node
+
+#     @abstractmethod
+#     def tick(self):
+#         raise NotImplementedError
+
+
+# class Neg(Decorator):
+
+#     def tick(self):
+#         status = self._node.tick()
+#         if status == Status.SUCCESS:
+#             return Status.FAILURE
+#         elif status == Status.FAILURE:
+#             return Status.SUCCESS
+#         return Status.RUNNING
+
+
+# class Fail(Decorator):
+
+#     def tick(self):
+#         self._node.tick()
+#         return Status.FAILURE
+
+
+# class Success(Decorator):
+
+#     def tick(self):
+#         self._node.tick()
+#         return Status.SUCCESS
+
+
+# class Until(Decorator):
+
+#     def tick(self):
+
+#         status = self._node.tick()
+#         if status == Status.SUCCESS:
+#             return status
+#         return Status.RUNNING
+
+
+# class DecoratorWrapper(ABC):
+
+#     @abstractmethod
+#     def tick(self, node: Task):
+#         pass
+
+#     @singledispatchmethod
+#     def __call__(self, node: Task):
+#         tick = partial(self.tick, node.tick)
+#         node.tick = tick
+#         return node
+
+#     @__call__.register
+#     def _(self, node: TaskLoader):
+#         node.add_decorator(self)
+#         return node
+
+# T = typing.Union[TaskLoader, Task]
+
+
+# @singledispatch
+# def process_decorator(node: Task, tick):
+#     # old_tick = node.tick
+#     node.tick = tick
+#     return node
+
+# @process_decorator.register
+# def _(node: TaskLoader, tick):
+#     node.add_decorator(tick)
+
