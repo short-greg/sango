@@ -86,51 +86,6 @@ class ArgManager(object):
         
         self._filters = filters
 
-
-        # self._init_vars = {}
-        # self._args = []
-        # self._args_by_name = {}
-        # self._tasks: typing.Dict[str, TaskLoader] = {}
-        # self._vars: typing.Dict[str, VarStorer] = {}
-        # i = 0
-        # # parent_storage = kwargs.get('_store') or NullStorage()
-        # self._storage = HierarchicalStorage(Storage(), parent_store)
-        # for (name, type_, value, is_task) in vals(cls):
-            
-
-        #     val = kwargs.get(name, value)
-
-
-
-        #     self._args.append((name, type_, value, is_task))
-        #     self._args_by_name[name] = (name, type_, value, is_task)
-        #     if i < len(args):
-        #         val = args[i]
-        #     else:
-        #         val = kwargs.get(name, value)
-
-        #     if val == UNDEFINED:
-        #         raise AttributeError(f"Value for {name} was not given.")
-        #     if isinstance(value, TaskLoader) and value is not val:
-        #         self._tasks[name] = value(val)
-        #     elif isinstance(value, TaskLoader):
-        #         self._tasks[name] = val
-        #     elif isinstance(val, InitVar):
-        #         self._init_vars[name] = val.value
-        #     elif isinstance(value, VarStorer):
-        #         self._vars[name] = value
-        #         # self._storage.add(name, value(val).val)
-        #         # value(val).store(name, self._storage)
-        #     i += 1
-
-        # if i < len(self._args):
-        #     raise TypeError(f"{cls}() takes {i} positional arguments but {len(self._args)} were given") 
-
-    
-        # data_defined = {key: _update_var(datum, parent_storage) for key, datum in data.items()}
-        # self._storage = HierarchicalStorage(Storage(**data_defined), parent_storage)
-        # self._tasks = {k: task.load(self._storage) for k, task in tasks.items()}
-
     def _run_filters(self, name, type_, value):
 
         for filter in self._filters:
@@ -145,63 +100,6 @@ class ArgManager(object):
             if self._run_filters(name, type_, value):
                 result_kwargs[name] = value
         return result_kwargs
-
-            # val = kwargs.get(name, value)
-            # result_kwargs[]
-            
-
-
-    # @property
-    # def vars(self):
-    #     return self._vars
-
-    # @property
-    # def tasks(self):
-    #     return self._tasks
-
-    # @property
-    # def init_vars(self):
-    #     return self._init_vars
-
-    # # @property
-    # # def store(self) -> Storage:
-    # #     return self._storage
-    
-    # def get(self, key):
-    #     return self._args_by_name[key]['value']
-
-# post_init <- use args/kwargs
-# get all vars/tasks etc from kwargs only
-
-
-class AtomicMeta(type):
-
-    def __call__(cls, *args, **kw):
-
-        self = cls.__new__(*args, **kw)
-        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
-        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
-        cls.__init__(self, *args, **kw)
-    
-
-class TreeMeta(type):
-
-    def __call__(cls, *args, **kw):
-
-        self = cls.__new__(*args, **kw)
-        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
-        kw['entry'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)['entry']
-        cls.__init__(self, *args, **kw)
-
-
-class CompositeMeta(type):
-
-    def __call__(cls, *args, **kw):
-        self = cls.__new__(*args, **kw)
-        vars = ArgManager(TypeFilter(VarStorer)).filter(cls)
-        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
-        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
-        cls.__init__(self, *args, **kw)
 
 
 class Task(ABC):
@@ -238,20 +136,19 @@ def _func():
     pass
 
 
+class AtomicMeta(type):
+
+    def __call__(cls, *args, **kw):
+
+        self = cls.__new__(*args, **kw)
+        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
+        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
+        cls.__init__(self, *args, **kw)
+
+
 class Atomic(Task):
 
     __metaclass__ = AtomicMeta
-
-    # def __new__(cls, *args, **kwargs):
-    #     arg_vars = ArgVars(cls, args, kwargs)
-    #     obj: Atomic = object.__new__(cls)
-    #     print('Before init')
-    #     # obj.__init__(store=arg_vars.store)
-    #     print('After init')
-    #     # obj.__post_init__(**arg_vars.init_vars)
-    #     print('After post init')
-
-    #     return obj
 
 
 class Planner(ABC):
@@ -334,6 +231,16 @@ def shuffle(linear: LinearPlanner):
     return linear
 
 
+class CompositeMeta(type):
+
+    def __call__(cls, *args, **kw):
+        self = cls.__new__(*args, **kw)
+        vars = ArgManager(TypeFilter(VarStorer)).filter(cls)
+        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
+        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
+        cls.__init__(self, *args, **kw)
+
+
 class Composite(Task):
 
     __metaclass__ = CompositeMeta
@@ -348,13 +255,6 @@ class Composite(Task):
     @property
     def n(self):
         return len(self._tasks)
-
-    # def __init__(
-    #     self, tasks: typing.List[Task], store: Storage
-    # ):
-    #     self._tasks: typing.List[Task] = tasks
-    #     self._store = store
-    #     self._n = len(tasks)
     
     @property
     def tasks(self):
@@ -383,30 +283,21 @@ class Composite(Task):
     def reset(self):
         for task in self._tasks:
             task.reset()
-    
-    # def __new__(cls, *args, **kwargs):
 
-    #     arg_vars = ArgVars(cls, args, kwargs)
-    #     obj: Composite = super().__new__(cls, tasks=arg_vars.tasks, store=arg_vars.store)
-    #     obj.__post_init__(**arg_vars.init_vars)
-    #     return obj
+
+class TreeMeta(type):
+
+    def __call__(cls, *args, **kw):
+
+        self = cls.__new__(*args, **kw)
+        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
+        kw['entry'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)['entry']
+        cls.__init__(self, *args, **kw)
 
 
 class Tree(Task):
 
     __metaclass__ = TreeMeta
-    # def __new__(cls, *args, **kwargs):
-
-    #     arg_vars = ArgVars(cls, args, kwargs)
-    #     entry = arg_vars.get('entry')        
-    #     if entry is None:
-    #         try:
-    #             entry = vals["entry"]
-    #         except KeyError:
-    #             raise KeyError("Field entry was not defined.")
-    #     obj: Tree = super().__new__(cls, entry, store=arg_vars.store)
-    #     obj.__post_init__(**arg_vars.init_vars)
-    #     return obj
     
     def __init__(self, entry: Task, store: Storage):
         self._entry = entry
