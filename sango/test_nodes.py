@@ -1,7 +1,7 @@
 import pytest
 
-from sango.vars import Args
-from .nodes import Action, Conditional, LinearPlanner, Sequence, Status, TaskLoader, TypeFilter, VarStorer, task, vals, ArgFilter, ClassArgFilter
+from sango.vars import Args, StoreVar
+from .nodes import Action, Conditional, Fallback, LinearPlanner, Sequence, Status, TaskLoader, Tree, TypeFilter, VarStorer, task, vals, ArgFilter, ClassArgFilter, var
 
 class TestStatus:
 
@@ -174,6 +174,94 @@ class TestCreateSequenceTask:
         status = seq.tick()
         assert status == Status.FAILURE
 
+    def test_tick_with_no_tasks(self):
+
+        class Pos(Sequence):
+            pass
+        
+        seq = Pos()
+        status = seq.tick()
+        assert status == Status.NONE
+
+    def test_pos_with_store(self):
+
+        class Pos(Sequence):
+            neg = task(DummyPositive)
+            data = var(2)
+        
+        seq = Pos()
+        assert seq.data.value == 2
+
+    def test_pos_with_store_and_new_val(self):
+
+        class Pos(Sequence):
+            neg = task(DummyPositive)
+            data = var(2)
+        
+        seq = Pos(data=3)
+        assert seq.data.value == 3
+
+
+
+class TestFallbackTask:
+
+    def test_num_elements_with_one_element(self):
+
+        class Pos(Fallback):
+            pos = task(DummyPositive)
+        
+        seq = Pos()
+        assert seq.n == 1
+
+    def test_tick_with_one_element(self):
+
+        class Pos(Fallback):
+            pos = task(DummyPositive)
+        
+        seq = Pos()
+        status = seq.tick()
+        assert status == Status.SUCCESS
+
+    def test_tick_once_with_two_elements(self):
+
+        class Pos(Fallback):
+            pos = task(DummyPositive)
+            neg = task(DummyNegative)
+        
+        seq = Pos()
+        status = seq.tick()
+        assert status == Status.SUCCESS
+
+    def test_tick_twice_with_two_elements(self):
+
+        class Pos(Fallback):
+            neg = task(DummyNegative)
+            pos = task(DummyPositive)
+        
+        seq = Pos()
+        status = seq.tick()
+        assert status == Status.RUNNING
+    
+    def test_tick_twice_with_first_fail(self):
+
+        class Pos(Fallback):
+            neg = task(DummyNegative)
+            pos = task(DummyNegative)
+        
+        seq = Pos()
+        status = seq.tick()
+        status = seq.tick()
+        assert status == Status.FAILURE
+
+    def test_tick_with_no_tasks(self):
+
+        class Pos(Fallback):
+            pass
+        
+        seq = Pos()
+        status = seq.tick()
+        assert status == Status.NONE
+
 
 class TestLinearPlanner:
 
@@ -190,6 +278,41 @@ class TestLinearPlanner:
         assert isinstance(planner.cur, DummyPositive)
         planner.adv()
         assert isinstance(planner.cur, DummyNegative)
+
+
+class TestTree:
+
+    def test_tree_with_one_sequence(self):
+
+        class X(Tree):
+            entry = task(DummyPositive)
+        
+        seq = X()
+        assert isinstance(seq, Tree)
+        assert isinstance(seq.entry, DummyPositive)
+
+    def test_tree_with_one_sequence(self):
+
+        class X(Tree):
+            @task
+            class entry(Fallback):
+                pos = task(DummyPositive)
+                neg = task(DummyPositive)
+        
+        seq = X()
+        assert isinstance(seq, Tree)
+        assert isinstance(seq.entry, Fallback)
+
+    def test_tick_with_one_element(self):
+
+        class X(Tree):
+            @task
+            class entry(Fallback):
+                pos = task(DummyPositive)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.SUCCESS
 
 
 # class T:

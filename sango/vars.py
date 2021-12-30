@@ -78,10 +78,6 @@ class AbstractStorage(ABC):
     @abstractmethod
     def get(self, key, default):
         raise NotImplementedError
-
-    # @abstractmethod
-    # def update_references(self, parent):
-    #     raise NotImplementedError
     
     @abstractmethod
     def add(self, var: Var):
@@ -121,12 +117,6 @@ class Storage(AbstractStorage):
 
     def get(self, key, default):
         return self._data.get(key, default)
-    
-    # def update_references(self, parent: AbstractStorage):
-        
-    #     for k, v in self.items():
-    #         if isinstance(v, Ref):
-    #             pass
                 
     def __contains__(self, key: str):
         return self.contains(key)
@@ -226,11 +216,11 @@ class HierarchicalStorage(AbstractStorage):
         for var in chain(self._child.vars(), self._parent.vars()):
             yield var
 
-    def get(self, key, default=None):
+    def get(self, key, default=None, recursive=False):
         
         if key in self._child:
             return self._child[key]
-        elif key in self._parent:
+        elif recursive and key in self._parent:
             return self._parent[key]
         return default
 
@@ -243,14 +233,18 @@ class HierarchicalStorage(AbstractStorage):
         return False
 
     @singledispatchmethod
-    def add(self, key: str, var: Var):
-        self._child.add(key, var)
+    def add(self, key: str, var):
+        self._child.add(key, Var(var))
 
     @add.register
     def _(self, key: str, var: Ref):
         self._child.add(
-            var.shared(self._parent)
+            key, var.shared(self._parent)
         )
+
+    @add.register
+    def _(self, key: str, var: Var):
+        self._child.add(key, var)
 
 
 HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, recursive=False)

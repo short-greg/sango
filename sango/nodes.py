@@ -115,7 +115,9 @@ class TaskMeta(type):
         for name, storer in var_stores.items():
             if name in kw:
                 storer(kw[name])
-            store.add(storer.value)
+                del kw[name]
+            
+            store.add(name, storer.value)
         return store
 
     # def __call__(cls, *args, **kw):
@@ -160,9 +162,17 @@ class Task(object, metaclass=TaskMeta):
     def __getattribute__(self, key: str) -> Any:
         try:
             store: HierarchicalStorage = super().__getattribute__('_store')
-            if store.contains(key, recursive=False):
-                v = store.get(key, recursive=False)
-                return v
+            print(store)
+
+            if isinstance(store, HierarchicalStorage):
+                if store.contains(key, recursive=False):
+                    v = store.get(key, recursive=False)
+                    return v
+            else:
+                if store.contains(key):
+                    v = store.get(key)
+                    return v
+
         except AttributeError:
             pass
         return super().__getattribute__(key)
@@ -224,6 +234,8 @@ class LinearPlanner(object):
     
     @property
     def cur(self):
+        if self._idx == len(self._items):
+            return None
         return self._items[self._idx]
 
     def rev(self):
@@ -266,6 +278,7 @@ class CompositeMeta(TaskMeta):
         for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
             if name in kw:
                 loader(kw[name])
+                del kw[name]
             tasks.append(loader.load(store, name))
         return tasks
 
@@ -318,31 +331,31 @@ class Composite(Task, metaclass=CompositeMeta):
 
 class TreeMeta(TaskMeta, metaclass=TaskMeta):
 
-    def _load_entry(cls, kw):
+    def _load_entry(cls, store, kw):
         entry = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)['entry']
         if entry in kw:
             entry(kw['entry'])
+        entry = entry.load(store, 'entry')
+        print('Entry: ', entry)
         return entry
 
     def __call__(cls, *args, **kw):
 
         self = cls.__new__(cls, *args, **kw)
-        kw['store'] = cls._update_var_stores(vars, kw)
+        kw['store'] = cls._update_var_stores(kw)
         kw['entry'] = cls._load_entry(kw['store'], kw)
         cls.__init__(self, *args, **kw)
         return self
 
 
-class Tree(Task):
+class Tree(Task, metaclass=TreeMeta):
 
-    __metaclass__ = TreeMeta
-    
     def __init__(self, entry: Task, store: Storage=None, name: str=''):
         super().__init__(store, name)
-        self._entry = entry
+        self.entry = entry
 
     def tick(self) -> Status:        
-        self._entry.tick()
+        return self.entry.tick()
 
 
 class Action(Atomic):
@@ -498,8 +511,8 @@ class Sequence(Composite):
         status = self._planner.cur.tick()
         if status == Status.FAILURE:
             return Status.FAILURE
-        self._planner.adv()
         
+        self._planner.adv()
         if self._planner.end():
             return Status.SUCCESS
         return Status.RUNNING
