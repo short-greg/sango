@@ -6,7 +6,7 @@ import typing
 from functools import partial, singledispatch, singledispatchmethod
 from typing import Any, Generic, Iterator, TypeVar
 from sango.vars import UNDEFINED, ConditionSet, HierarchicalStorage, Storage
-from .vars import AbstractStorage, Args, HierarchicalStorage, NullStorage, Ref, Shared, StoreVar, Var, InitVar
+from .vars import AbstractStorage, Args, HierarchicalStorage, NullStorage, Ref, Shared, StoreVar, Var
 from .utils import coalesce
 import random
 from functools import wraps
@@ -23,7 +23,7 @@ class Status(Enum):
 
     @property
     def done(self):
-        return self == Status.FAILURE or Status.SUCCESS or Status.DONE
+        return self == Status.FAILURE or self == Status.SUCCESS or self == Status.DONE
 
 
 # TODO: Probably remove.. I don't think I need this now
@@ -39,8 +39,9 @@ def vals(cls):
         annotations = cls.__annotations__
     except AttributeError:
         annotations = {}
+    d  = getattr(cls, '__dict__', {})
 
-    for var in [x for x in dir(cls) if not x.startswith('__')]:
+    for var in [x for x in d.keys() if not x.startswith('__')]:
         annotation = annotations.get(var, None)
         val = getattr(cls, var)
         is_task_ = is_task(annotation, val)
@@ -80,7 +81,7 @@ class TypeFilter(ArgFilter):
         return isinstance(value, self._arg_type)
 
 
-class ArgManager(object):
+class ClassArgFilter(object):
 
     def __init__(self, filters: typing.List[ArgFilter]):
         
@@ -102,21 +103,59 @@ class ArgManager(object):
         return result_kwargs
 
 
-class Task(ABC):
+class TaskMeta(type):
 
-    def __init__(self, store: Storage):
-        self._store = store
+    def _update_var_stores(cls, kw):
+        
+        var_stores = ClassArgFilter([TypeFilter(VarStorer)]).filter(cls)
+        store = kw.get('store')
+        if store is None:
+            store = HierarchicalStorage(Storage())
+        
+        for name, storer in var_stores.items():
+            if name in kw:
+                storer(kw[name])
+            store.add(storer.value)
+        return store
+
+    # def __call__(cls, *args, **kw):
+    #     self = cls.__new__(cls, *args, *kw)
+    #     cls.__init__(self, *args, **kw)
+    #     cls.__post_init__(self, *args, **kw)
+    #     return self
+
+
+class AtomicMeta(TaskMeta):
+
+    def __call__(cls, *args, **kw):
+
+        self = cls.__new__(cls, *args, **kw)
+        kw['store'] = cls._update_var_stores(kw)
+        cls.__init__(self, *args, **kw)
+        return self
     
-    @abstractmethod
+
+class Task(object, metaclass=TaskMeta):
+
+    def __init__(self, store: Storage=None, name: str=''):
+        self._store = store
+        self._name = name
+        self._cur_status = Status.READY
+    
     def reset(self):
-        pass
+        self._cur_status = Status.READY
     
     @abstractmethod
     def tick(self) -> Status:
         raise NotImplementedError
 
-    def __post_init__(self):
-        pass
+    @property
+    def status(self) -> Status:
+        return self._cur_status
+    
+    @property
+    def name(self) -> str:
+        return self._name
 
     def __getattribute__(self, key: str) -> Any:
         try:
@@ -136,19 +175,8 @@ def _func():
     pass
 
 
-class AtomicMeta(type):
-
-    def __call__(cls, *args, **kw):
-
-        self = cls.__new__(*args, **kw)
-        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
-        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
-        cls.__init__(self, *args, **kw)
-
-
-class Atomic(Task):
-
-    __metaclass__ = AtomicMeta
+class Atomic(Task, metaclass=AtomicMeta):
+    pass
 
 
 class Planner(ABC):
@@ -184,7 +212,7 @@ class LinearPlanner(object):
         return self._idx
 
     def end(self):
-        if len(self._idx) == len(self._items):
+        if self._idx == len(self._items):
             return True
         return False
     
@@ -231,24 +259,30 @@ def shuffle(linear: LinearPlanner):
     return linear
 
 
-class CompositeMeta(type):
+class CompositeMeta(TaskMeta):
+
+    def _load_tasks(cls, store, kw):
+        tasks = []
+        for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
+            if name in kw:
+                loader(kw[name])
+            tasks.append(loader.load(store, name))
+        return tasks
 
     def __call__(cls, *args, **kw):
-        self = cls.__new__(*args, **kw)
-        vars = ArgManager(TypeFilter(VarStorer)).filter(cls)
-        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
-        kw['tasks'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)
+        self = cls.__new__(cls, *args, **kw)
+        kw['store'] = cls._update_var_stores(kw)
+        kw['tasks'] = cls._load_tasks(kw['store'], kw)
         cls.__init__(self, *args, **kw)
+        return self
 
 
-class Composite(Task):
-
-    __metaclass__ = CompositeMeta
+class Composite(Task, metaclass=CompositeMeta):
 
     def __init__(
-        self, tasks, store: Storage, planner: Planner=None
+        self, tasks: typing.List[Task], store: Storage=None, name: str='', planner: Planner=None
     ):
-        super().__init__(store)
+        super().__init__(store, name)
         self._tasks = tasks
         self._planner = planner or LinearPlanner(tasks)
 
@@ -259,10 +293,6 @@ class Composite(Task):
     @property
     def tasks(self):
         return list(**self._tasks)
-    
-    @property
-    def n(self):
-        return self._n
 
     @abstractmethod
     def subtick(self) -> Status:
@@ -273,7 +303,7 @@ class Composite(Task):
         return self._cur_status
 
     def tick(self):
-        if self._cur_status.done():
+        if self._cur_status.done:
             return Status.DONE
 
         status = self.subtick()
@@ -281,30 +311,35 @@ class Composite(Task):
         return status
     
     def reset(self):
+        super().reset()
         for task in self._tasks:
             task.reset()
 
 
-class TreeMeta(type):
+class TreeMeta(TaskMeta, metaclass=TaskMeta):
+
+    def _load_entry(cls, kw):
+        entry = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)['entry']
+        if entry in kw:
+            entry(kw['entry'])
+        return entry
 
     def __call__(cls, *args, **kw):
 
-        self = cls.__new__(*args, **kw)
-        kw['store'] = HierarchicalStorage(Storage(**vars), kw.get('store'))
-        kw['entry'] = ArgManager(TypeFilter(TaskLoader)).filter(cls)['entry']
+        self = cls.__new__(cls, *args, **kw)
+        kw['store'] = cls._update_var_stores(vars, kw)
+        kw['entry'] = cls._load_entry(kw['store'], kw)
         cls.__init__(self, *args, **kw)
+        return self
 
 
 class Tree(Task):
 
     __metaclass__ = TreeMeta
     
-    def __init__(self, entry: Task, store: Storage):
+    def __init__(self, entry: Task, store: Storage=None, name: str=''):
+        super().__init__(store, name)
         self._entry = entry
-        self._store = store
-
-    def __post_init__(self):
-        pass
 
     def tick(self) -> Status:        
         self._entry.tick()
@@ -348,9 +383,6 @@ class Conditional(Atomic):
     @abstractmethod
     def check(self) -> bool:
         raise NotImplementedError
-    
-    def reset(self):
-        pass
 
     def tick(self):
         if self._cur_status.done:
@@ -379,12 +411,11 @@ class TaskLoader(object):
         self._args = args or Args()
         self._decorators = decorators or []
     
-    def load(self, storage: Storage):
-        print('Task: ', self._task)
+    def load(self, storage: Storage, name: str=''):
+        storage = HierarchicalStorage(Storage(), storage)
         task = self._task(
-            _store=storage, *self._args.args, **self._args.kwargs
+            store=storage, name=name, *self._args.args, **self._args.kwargs
         )
-        print('Loaded')
         for decorator in self._decorators:
             task = decorator(task)
         return task
@@ -415,12 +446,15 @@ def _(args: Args, decorators=None):
 
 class VarStorer(object):
 
-    def __init__(self, val: Var):
+    def __init__(self, val):
 
-        self._val = val
+        if isinstance(val, Var):
+            self._val = val
+        else:
+            self._val = Var(val)
 
     @property
-    def val(self):
+    def value(self):
         return self._val
 
     @singledispatchmethod
@@ -440,6 +474,10 @@ class VarStorer(object):
         return self
 
 
+# TODO: Error handling if passing a ref to a regular storage
+
+
+
 def var(val=UNDEFINED):    
     return VarStorer(Var(val))
 
@@ -447,18 +485,20 @@ def var(val=UNDEFINED):
 class Sequence(Composite):
 
     def reset(self):
+        super().reset()
         self._planner.reset()
     
     def _plan(self):
         return self._tasks
 
     def subtick(self) -> Status:
+
         if self._planner.end() is True:
             return Status.NONE
-
         status = self._planner.cur.tick()
         if status == Status.FAILURE:
             return Status.FAILURE
+        self._planner.adv()
         
         if self._planner.end():
             return Status.SUCCESS
