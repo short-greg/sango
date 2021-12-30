@@ -162,7 +162,6 @@ class Task(object, metaclass=TaskMeta):
     def __getattribute__(self, key: str) -> Any:
         try:
             store: HierarchicalStorage = super().__getattribute__('_store')
-            print(store)
 
             if isinstance(store, HierarchicalStorage):
                 if store.contains(key, recursive=False):
@@ -336,7 +335,6 @@ class TreeMeta(TaskMeta, metaclass=TaskMeta):
         if entry in kw:
             entry(kw['entry'])
         entry = entry.load(store, 'entry')
-        print('Entry: ', entry)
         return entry
 
     def __call__(cls, *args, **kw):
@@ -365,7 +363,10 @@ class Action(Atomic):
         raise NotImplementedError
 
     def tick(self):
-        raise NotImplementedError
+        if self._cur_status.done:
+            return Status.DONE
+        self._cur_status = self.act()
+        return self._cur_status
 
 
 @singledispatch
@@ -538,13 +539,18 @@ class Fallback(Composite):
 class Parallel(Composite):
 
     def __init__(
-        self, tasks, store: Storage
+        self, tasks: typing.List[Task], store: Storage=None, name: str='', planner: Planner=None
     ):
-        super().__init__(tasks, store)
+        super().__init__(tasks, store=store, name=name, planner=planner)
         self._statuses = []
     
     def status_total(self, status: Status):
-        return functools.reduce(lambda x, y: x + (1 if y == status else 0), self._statuses)
+        total = 0
+        for s in self._statuses:
+            if s == status:
+                total += 1
+        return total
+        # return functools.reduce(lambda x, y: x + (1 if y == status else 0), self._statuses)
 
     def reset(self):
         super().reset()
@@ -557,20 +563,32 @@ class Parallel(Composite):
                 self._statuses.append(Status.RUNNING)
             elif self._statuses[i] != Status.RUNNING:
                 continue
-            self._statuses.append(task.tick())
-        
+            self._statuses[i] = task.tick()
+    
         if Status.RUNNING in self._statuses:
             return Status.RUNNING 
 
         return Status.SUCCESS if Status.FAILURE not in self._statuses else Status.FAILURE
 
 
+# workaround to deal with case wher the 
+# class has been decorated versus an 
+# object of the class
+def wrap_tick(self, old_tick):
+
+    if self is None:
+        return old_tick()
+    
+    return old_tick(self)
+
+
 def neg(node: Task):
 
     old_tick = node.tick
+
     @wraps(node.tick)
-    def tick(self):
-        status = old_tick(self)
+    def tick(self=None):
+        status = wrap_tick(self, old_tick)
         if status == Status.SUCCESS:
             return Status.FAILURE
         elif status == Status.FAILURE:
@@ -585,8 +603,8 @@ def fail(node: Task):
 
     old_tick = node.tick
     @wraps(node.tick)
-    def tick(self):
-        old_tick(self)
+    def tick(self=None):
+        wrap_tick(self, old_tick)
         return Status.FAILURE
     
     node.tick = tick
@@ -597,8 +615,8 @@ def succeed(node: Task):
 
     old_tick = node.tick
     @wraps(node.tick)
-    def tick(self):
-        old_tick(self)
+    def tick(self=None):
+        wrap_tick(self, old_tick)
         return Status.SUCCESS
     
     node.tick = tick
@@ -609,10 +627,15 @@ def until(node: Task):
 
     old_tick = node.tick
     @wraps(node.tick)
-    def tick(self):
-        status = old_tick(self)
+    def tick(self=None):
+        status = wrap_tick(self, old_tick)
         if status == Status.SUCCESS:
             return status
+        elif status == Status.FAILURE:
+            if self is not None:
+                node.reset(self)
+            else:
+                node.reset()
         return Status.RUNNING
     
     node.tick = tick
@@ -623,9 +646,15 @@ def succeed_on_first(node: Parallel):
 
     old_tick = node.tick
     @wraps(node.tick)
-    def tick(self):
-        status = old_tick(self)
-        if status == Status.SUCCESS and node.status_total(Status.SUCCESS) > 0:
+    def tick(self=None):
+        status = wrap_tick(self, old_tick)
+
+        if self is None:
+            status_total = node.status_total(Status.SUCCESS)
+        else:
+            status_total = node.status_total(self, Status.SUCCESS)
+
+        if status == Status.RUNNING and status_total > 0:
             return Status.SUCCESS
         return status
     
@@ -633,13 +662,18 @@ def succeed_on_first(node: Parallel):
     return node
 
 
-def succeed_on_first(node: Parallel):
+def fail_on_first(node: Parallel):
 
     old_tick = node.tick
     @wraps(node.tick)
-    def tick(self):
-        status = old_tick(self)
-        if status == Status.FAILURE and node.status_total(Status.FAILURE) > 0:
+    def tick(self=None):
+        status = wrap_tick(self, old_tick)
+
+        if self is None:
+            status_total = node.status_total(Status.FAILURE)
+        else:
+            status_total = node.status_total(self, Status.FAILURE)
+        if status == Status.RUNNING and status_total > 0:
             return Status.FAILURE
         return status
     

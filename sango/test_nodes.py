@@ -1,7 +1,8 @@
+from functools import wraps
 import pytest
 
-from sango.vars import Args, StoreVar
-from .nodes import Action, Conditional, Fallback, LinearPlanner, Sequence, Status, TaskLoader, Tree, TypeFilter, VarStorer, task, vals, ArgFilter, ClassArgFilter, var
+from sango.vars import Args, Storage, StoreVar
+from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, TaskLoader, Tree, TypeFilter, VarStorer, fail, fail_on_first, loads, neg, succeed, succeed_on_first, task, until, vals, ArgFilter, ClassArgFilter, var
 
 class TestStatus:
 
@@ -76,6 +77,17 @@ class DummyPositive(Conditional):
     def check(self):
         return True
 
+class DummyRange(Conditional):
+
+    def __init__(self, store: Storage = None, name: str = ''):
+        super().__init__(store=store, name=name)
+        self._idx = 0
+
+    def check(self):
+        if self._idx < 2:
+            self._idx += 1
+            return False
+        return True
 
 class TestArgFilter:
 
@@ -315,14 +327,109 @@ class TestTree:
         assert status == Status.SUCCESS
 
 
-# class T:
+class TestDecorators:
 
-#     def __init__(self, *args, **kwargs):
-#         print('init called')
-    
-#     def __new__(cls):
-#         print("new called")
-#         obj = object.__new__(cls)
-#         return obj
+    def test_neg_with_one_sequence(self):
 
-# t = T()
+        class X(Tree):
+            @loads(neg)
+            @task
+            class entry(Fallback):
+                pos = task(DummyPositive)
+                neg = task(DummyNegative)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.FAILURE
+
+    def test_neg_preceding_dirctor_with_one_sequence(self):
+
+        class X(Tree):
+            @task
+            @neg
+            class entry(Fallback):
+                pos = task(DummyPositive)
+                neg = task(DummyNegative)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.FAILURE
+
+    def test_fail_preceding_decorator_with_one_sequence(self):
+
+        class X(Tree):
+            @task
+            @succeed
+            class entry(Sequence):
+                neg = task(DummyNegative)
+                pos = task(DummyPositive)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.SUCCESS
+
+    def test_until_with_one_sequence(self):
+
+        class X(Tree):
+            @task
+            @until
+            class entry(Sequence):
+                range = task(DummyRange)
+                pos = task(DummyPositive)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.RUNNING
+        status = tree.tick()
+        status = tree.tick()
+        status = tree.tick()
+        assert status == Status.SUCCESS
+
+
+class TestParallelTask:
+
+    def test_num_elements_with_one_element(self):
+
+        class Pos(Parallel):
+            pos = task(DummyPositive)
+        
+        seq = Pos()
+        assert seq.n == 1
+
+    def test_tick_with_one_element(self):
+
+        class Pos(Parallel):
+            pos = task(DummyPositive)
+        
+        seq = Pos()
+        status = seq.tick()
+        assert status == Status.SUCCESS
+
+    def test_fail_on_first_with_two_elements(self):
+
+        class X(Tree):
+            @task
+            @fail_on_first
+            class entry(Parallel):
+                pos = task(DummyAction)
+                neg = task(DummyNegative)
+
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.FAILURE
+
+
+    def test_succeed_on_first_with_two_elements(self):
+
+        class X(Tree):
+            @task
+            @succeed_on_first
+            class entry(Parallel):
+                pos = task(DummyAction)
+                neg = task(DummyPositive)
+
+        tree = X()
+        status = tree.tick()
+        assert status == Status.SUCCESS
+
