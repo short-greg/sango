@@ -168,13 +168,19 @@ NullStorage.__contains__ = NullStorage.contains
 
 class Ref(object):
 
-    def __init__(self, var_name: str):
+    def __init__(self, var_name: str, store: Storage=None):
 
         self._var_name = var_name
+        self.store = store
 
     @property
     def name(self):
         return self._var_name
+    
+    def value(self):
+        if self.store is None:
+            raise AttributeError("Storage to reference has not been set.")
+        return self.store[self._var_name]
 
     def shared(self, storage: Storage) -> Shared:
 
