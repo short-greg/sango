@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 import typing
 
 from sango.vars import Ref, Shared, Storage
 from .nodes import ClassArgFilter, Status, Task, TaskMeta, TypeFilter
+from typing import Generic, TypeVar
 
 
 class StateMeta(TaskMeta):
@@ -13,8 +15,12 @@ class StateMeta(TaskMeta):
         cls.__init__(self, *args, **kw)
         return self
 
+V = TypeVar('V')
 
-class State(ABC, metaclass=StateMeta):
+Emission = TypeVar('Emission')
+
+
+class State(Generic[V], metaclass=StateMeta):
 
     def __init__(self, store: Storage, name: str):
 
@@ -22,10 +28,21 @@ class State(ABC, metaclass=StateMeta):
         self._name = name
 
     @abstractmethod
-    def update(self):
+    def enter(self) -> Emission:
+        raise NotImplementedError
+
+    @abstractmethod
+    def update(self) -> Emission:
         raise NotImplementedError
 
 
+@dataclass
+class Emission(Generic[V]):
+
+    next_state: State[V]
+    value: V = None
+
+    
 class StateLoader(object):
 
     pass
@@ -44,8 +61,9 @@ class StateMachineMeta(TaskMeta):
 
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
-        kw['store'] = cls._update_var_stores(kw)
-        kw['states'] = cls._load_states(kw['store'], kw)
+        store = cls._update_var_stores(kw)
+        states = cls._load_states(kw['store'], kw)
+
         cls.__init__(self, *args, **kw)
         return self
 
@@ -64,11 +82,13 @@ def state(self):
     pass
 
 
-def final(self, status=Status.SUCCESS):
-    pass
-
 
 class FSM(StateMachine):
+
+    def __pre_init__(self, states: typing.List[State], store: Storage):
+
+        self._states = states
+        self._store = store
 
     def __init__(self, start: State, states: typing.List[State], store: Storage=None, name: str=''):
         
@@ -77,10 +97,20 @@ class FSM(StateMachine):
         self._cur_state = self._start
     
     def reset(self):
-        pass
+        
+        self._cur_state = self._start
+        self._start.enter()
 
     def tick(self):
-        pass
+
+        emission = self._cur_state.update()
+        if emission.next_state.status.done:
+            self._cur_state = emission.next_state
+            return self._cur_state.status
+        elif emission.next_state != self._cur_state:
+            self._cur_state = emission.next_state
+            self._cur_state.enter()
+        return Status.RUNNING
 
     @property
     def cur_status(self):
@@ -90,28 +120,28 @@ class FSM(StateMachine):
         return Status.RUNNING
 
 
-class PlayState(State):
+# class PlayState(State):
 
-    pause_clicked: Shared = Ref("pause_clicked")
-    stop_clicked: Shared = Ref("stop_clicked")
+#     pause_clicked: Shared = Ref("pause_clicked")
+#     stop_clicked: Shared = Ref("stop_clicked")
 
-    def __init__(self, stopped: State, paused: State, store: Storage, name: str):
-        super().__init__(store, name)
-        self._stopped = stopped
-        self._paused = paused
+#     def __init__(self, stopped: State, paused: State, store: Storage, name: str):
+#         super().__init__(store, name)
+#         self._stopped = stopped
+#         self._paused = paused
 
-    def enter(self):
-        # self.play
-        pass
+#     def enter(self):
+#         # self.play
+#         pass
 
-    def update(self) -> State:
-        if self.pause_clicked.value is True:
-            return self._paused
-        if self.stop_clicked.value is True:
-            return self._stopped
-        if self.finished is True:
-            return self._stopped
-        return self
+#     def update(self) -> State:
+#         if self.pause_clicked.value is True:
+#             return self._paused
+#         if self.stop_clicked.value is True:
+#             return self._stopped
+#         if self.finished is True:
+#             return self._stopped
+#         return self
 
         
 class T(FSM):
