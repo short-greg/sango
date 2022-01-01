@@ -79,8 +79,8 @@ class DummyPositive(Conditional):
 
 class DummyRange(Conditional):
 
-    def __init__(self, store: Storage = None, name: str = ''):
-        super().__init__(store=store, name=name)
+    def __init__(self, name: str = ''):
+        super().__init__(name=name)
         self._idx = 0
 
     def check(self):
@@ -432,4 +432,3 @@ class TestParallelTask:
         tree = X()
         status = tree.tick()
         assert status == Status.SUCCESS
-

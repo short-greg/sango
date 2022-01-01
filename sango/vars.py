@@ -79,10 +79,6 @@ class AbstractStorage(ABC):
     def get(self, key, default):
         raise NotImplementedError
     
-    @abstractmethod
-    def add(self, var: Var):
-        raise NotImplementedError
-
     def contains(self, key: str):
         return key in self._data
 
@@ -97,7 +93,10 @@ class Storage(AbstractStorage):
 
     @singledispatchmethod
     def __setitem__(self, key, value):
-        self._data[key] = Var(value)
+        if isinstance(value, Var):
+            self._data[key] = value
+        else:
+            self._data[key] = Var(value)
 
     @__setitem__.register
     def _(self, key, value: Var):
@@ -115,14 +114,11 @@ class Storage(AbstractStorage):
     def vars(self):
         return self._data.values()
 
-    def get(self, key, default):
+    def get(self, key, default=None):
         return self._data.get(key, default)
                 
     def __contains__(self, key: str):
         return self.contains(key)
-    
-    def add(self, key: str, var: Var):
-        self._data[key] = var
 
     def contains(self, key: str):
         return key in self._data
@@ -155,9 +151,6 @@ class NullStorage(AbstractStorage):
     
     # def update_references(self, parent: AbstractStorage):
     #     pass
-
-    def add(self, key: str, var: Var):
-        pass
 
     def contains(self, key: str):
         return False
@@ -196,14 +189,25 @@ class HierarchicalStorage(AbstractStorage):
 
         self._parent = parent or NullStorage()
         self._child = child
-        # self._child.update_references(self._parent)
 
+    @singledispatchmethod
     def __setitem__(self, key, value):
-        
+        #TODO: Find out why this doesn't work
+        if isinstance(value, Var):
+            self._child[key] = value
+        else:
+            self._child[key] = Var(value)
+
+    @__setitem__.register
+    def _(self, key, value: Var):
         self._child[key] = value
 
+    @__setitem__.register
+    def _(self, key, value: Ref):
+        self._child[key] = value.shared(self._parent)
+
     def __getitem__(self, key) -> Var:
-        
+
         if key in self._child:
             return self._child[key]
         elif key in self._parent:
@@ -237,20 +241,6 @@ class HierarchicalStorage(AbstractStorage):
         if recursive:
             return key in self._parent
         return False
-
-    @singledispatchmethod
-    def add(self, key: str, var):
-        self._child.add(key, Var(var))
-
-    @add.register
-    def _(self, key: str, var: Ref):
-        self._child.add(
-            key, var.shared(self._parent)
-        )
-
-    @add.register
-    def _(self, key: str, var: Var):
-        self._child.add(key, var)
 
 
 HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, recursive=False)

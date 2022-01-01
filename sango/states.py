@@ -101,6 +101,7 @@ class PlayState(State):
         self._paused = paused
 
     def enter(self):
+        # self.play
         pass
 
     def update(self) -> State:
@@ -108,11 +109,11 @@ class PlayState(State):
             return self._paused
         if self.stop_clicked.value is True:
             return self._stopped
+        if self.finished is True:
+            return self._stopped
         return self
 
         
-
-
 class T(FSM):
 
     start = state()

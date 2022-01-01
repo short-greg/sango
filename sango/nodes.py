@@ -4,9 +4,9 @@ import functools
 import itertools
 import typing
 from functools import partial, singledispatch, singledispatchmethod
-from typing import Any, Generic, Iterator, TypeVar
-from sango.vars import UNDEFINED, ConditionSet, HierarchicalStorage, Storage
-from .vars import AbstractStorage, Args, HierarchicalStorage, NullStorage, Ref, Shared, StoreVar, Var
+from typing import Any, Iterator
+from sango.vars import UNDEFINED, HierarchicalStorage, Storage
+from .vars import AbstractStorage, Args, HierarchicalStorage, Ref, StoreVar, Var
 from .utils import coalesce
 import random
 from functools import wraps
@@ -103,13 +103,51 @@ class ClassArgFilter(object):
         return result_kwargs
 
 
+class VarStorer(object):
+
+    def __init__(self, val):
+
+        if isinstance(val, Var):
+            self._val = val
+        else:
+            self._val = Var(val)
+
+    @property
+    def value(self):
+        return self._val
+
+    @singledispatchmethod
+    def __call__(self, val):
+
+        self._val = Var(val)
+        return self
+
+    @__call__.register
+    def _(self, val: Ref):
+        self._val = val
+        return self
+
+    @__call__.register
+    def _(self, val: Var):
+        self._val = val
+        return self
+
+# TODO: Error handling if passing a ref to a regular storage
+
+
+def var(val=UNDEFINED):    
+    return VarStorer(Var(val))
+
+
 class TaskMeta(type):
 
     def _update_var_stores(cls, kw):
         
         var_stores = ClassArgFilter([TypeFilter(VarStorer)]).filter(cls)
-        store = kw.get('store')
-        if store is None:
+        if 'store' in kw:
+            store = kw.get('store')
+            del kw['store']
+        else:
             store = HierarchicalStorage(Storage())
         
         for name, storer in var_stores.items():
@@ -117,33 +155,19 @@ class TaskMeta(type):
                 storer(kw[name])
                 del kw[name]
             
-            store.add(name, storer.value)
+            store[name] = storer.value
         return store
 
-    # def __call__(cls, *args, **kw):
-    #     self = cls.__new__(cls, *args, *kw)
-    #     cls.__init__(self, *args, **kw)
-    #     cls.__post_init__(self, *args, **kw)
-    #     return self
-
-
-class AtomicMeta(TaskMeta):
-
-    def __call__(cls, *args, **kw):
-
-        self = cls.__new__(cls, *args, **kw)
-        kw['store'] = cls._update_var_stores(kw)
-        cls.__init__(self, *args, **kw)
-        return self
-    
 
 class Task(object, metaclass=TaskMeta):
 
-    def __init__(self, store: Storage=None, name: str=''):
-        self._store = store
+    def __init__(self, name: str=''):
         self._name = name
         self._cur_status = Status.READY
     
+    def __pre_init__(self, store: Storage):
+        self._store = store
+
     def reset(self):
         self._cur_status = Status.READY
     
@@ -161,8 +185,7 @@ class Task(object, metaclass=TaskMeta):
 
     def __getattribute__(self, key: str) -> Any:
         try:
-            store: HierarchicalStorage = super().__getattribute__('_store')
-
+            store: Storage = super().__getattribute__('_store')
             if isinstance(store, HierarchicalStorage):
                 if store.contains(key, recursive=False):
                     v = store.get(key, recursive=False)
@@ -184,8 +207,22 @@ def _func():
     pass
 
 
+class AtomicMeta(TaskMeta):
+
+    def __call__(cls, *args, **kw):
+
+        self = cls.__new__(cls, *args, **kw)
+        store = cls._update_var_stores(kw)
+        cls.__pre_init__(self, store)
+        cls.__init__(self, *args, **kw)
+        return self
+    
+
 class Atomic(Task, metaclass=AtomicMeta):
-    pass
+    
+    def __pre_init__(self, store: Storage):
+
+        self._store = store
 
 
 class Planner(ABC):
@@ -283,8 +320,9 @@ class CompositeMeta(TaskMeta):
 
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
-        kw['store'] = cls._update_var_stores(kw)
-        kw['tasks'] = cls._load_tasks(kw['store'], kw)
+        store = cls._update_var_stores(kw)
+        tasks = cls._load_tasks(store, kw)
+        cls.__pre_init__(self, tasks, store)
         cls.__init__(self, *args, **kw)
         return self
 
@@ -292,11 +330,14 @@ class CompositeMeta(TaskMeta):
 class Composite(Task, metaclass=CompositeMeta):
 
     def __init__(
-        self, tasks: typing.List[Task], store: Storage=None, name: str='', planner: Planner=None
+        self, name: str='', planner: Planner=None
     ):
-        super().__init__(store, name)
+        super().__init__(name)
+        self._planner = planner or LinearPlanner(self._tasks)
+
+    def __pre_init__(self, tasks: typing.List[Task], store: Storage=None):
+        super().__pre_init__(store)
         self._tasks = tasks
-        self._planner = planner or LinearPlanner(tasks)
 
     @property
     def n(self):
@@ -328,30 +369,32 @@ class Composite(Task, metaclass=CompositeMeta):
             task.reset()
 
 
-class TreeMeta(TaskMeta, metaclass=TaskMeta):
+class TreeMeta(TaskMeta):
 
     def _load_entry(cls, store, kw):
         entry = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)['entry']
         if entry in kw:
             entry(kw['entry'])
+            del kw['entry']
         entry = entry.load(store, 'entry')
         return entry
 
     def __call__(cls, *args, **kw):
 
         self = cls.__new__(cls, *args, **kw)
-        kw['store'] = cls._update_var_stores(kw)
-        kw['entry'] = cls._load_entry(kw['store'], kw)
+        store = cls._update_var_stores(kw)
+        entry = cls._load_entry(store, kw)
+        cls.__pre_init__(self, entry, store)
         cls.__init__(self, *args, **kw)
         return self
 
 
 class Tree(Task, metaclass=TreeMeta):
 
-    def __init__(self, entry: Task, store: Storage=None, name: str=''):
-        super().__init__(store, name)
+    def __pre_init__(self, entry: Task, store: Storage):
+        super().__pre_init__(store)
         self.entry = entry
-
+    
     def tick(self) -> Status:        
         return self.entry.tick()
 
@@ -460,41 +503,6 @@ def _(args: Args, decorators=None):
     return TaskLoader(args=args, decorators=decorators)
 
 
-class VarStorer(object):
-
-    def __init__(self, val):
-
-        if isinstance(val, Var):
-            self._val = val
-        else:
-            self._val = Var(val)
-
-    @property
-    def value(self):
-        return self._val
-
-    @singledispatchmethod
-    def __call__(self, val):
-
-        self._val = Var(val)
-        return self
-
-    @__call__.register
-    def _(self, val: Ref):
-        self._val = val
-        return self
-
-    @__call__.register
-    def _(self, val: Var):
-        self._val = val
-        return self
-
-# TODO: Error handling if passing a ref to a regular storage
-
-
-def var(val=UNDEFINED):    
-    return VarStorer(Var(val))
-
 
 class Sequence(Composite):
 
@@ -539,9 +547,9 @@ class Fallback(Composite):
 class Parallel(Composite):
 
     def __init__(
-        self, tasks: typing.List[Task], store: Storage=None, name: str='', planner: Planner=None
+        self, name: str='', planner: Planner=None
     ):
-        super().__init__(tasks, store=store, name=name, planner=planner)
+        super().__init__(name=name, planner=planner)
         self._statuses = []
     
     def status_total(self, status: Status):
