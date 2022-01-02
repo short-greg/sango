@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod, abstractproperty
 from enum import Enum
-import functools
-import itertools
 import typing
 from functools import partial, singledispatch, singledispatchmethod
 from typing import Any, Iterator
@@ -676,47 +674,3 @@ def loads(decorator):
         loader.add_decorator(decorator)
         return loader
     return _
-
-
-
-
-# class t(Tree):
-    
-#     class entry(Sequence):
-#         
-#         # TODO: Add in meta
-#         class meta:
-#           postcondition = ConditionSet()
-#           cost
-#         x: Action = task(act, ref(""), ref(""))
-#         y: Action = task(act, ref(""), ref(""))
-#         x: Conditional = UNDEFINED
-#         xx: Conditional = False
-        
-#         @action
-#         def z(storage: Storage):
-#             pass
-            
-#         class y(Action):
-#             pass
-
-
-# def vdir(obj):
-#     for x in dir(obj):
-#         if not x.startswith('__'):
-#             yield x, obj.__dict__[x]
-
-
-# def ttt(cls):
-
-#     __old_init__ = cls.__init__
-#     def __init__(self):
-#         self.x = 1
-#         __old_init__(self)
-    
-#     cls.__init__ = __init__
-#     return cls
-
-# @ttt
-# class Y:
-#     pass

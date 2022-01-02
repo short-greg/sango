@@ -139,17 +139,6 @@ class Emission(Generic[V]):
         return state, self._value
 
 
-
-# @singledispatch
-# def process_state_var(state: State, states: typing.Dict[str, State]):
-#     return state
-
-
-# @process_state_var.register
-# def _(state: StateRef, states: typing.Dict[str, State]):
-#     return state.lookup(states)
-
-
 class StateLoader(Loader):
 
     def __init__(self, state_cls: typing.Type[State]=UNDEFINED, args: Args=None, decorators=None):
@@ -245,26 +234,3 @@ class FSM(StateMachine):
     @property
     def status(self):
         return self._cur_state.status.status
-
-# class PlayState(State):
-
-#     pause_clicked: Shared = Ref("pause_clicked")
-#     stop_clicked: Shared = Ref("stop_clicked")
-
-#     def __init__(self, stopped: State, paused: State, store: Storage, name: str):
-#         super().__init__(store, name)
-#         self._stopped = stopped
-#         self._paused = paused
-
-#     def enter(self):
-#         # self.play
-#         pass
-
-#     def update(self) -> State:
-#         if self.pause_clicked.value is True:
-#             return self._paused
-#         if self.stop_clicked.value is True:
-#             return self._stopped
-#         if self.finished is True:
-#             return self._stopped
-#         return self
