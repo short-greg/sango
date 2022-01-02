@@ -460,48 +460,57 @@ class Conditional(Atomic):
 #         return super().__post_init__()
 
 
-class TaskLoader(object):
+class Loader(object):
 
-    def __init__(self, task_cls: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):
+    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None, decorators=None):
 
-        self._task_cls = task_cls
+        self._item_cls = cls
         self._args = args or Args()
-        self._decorators = decorators or []
+        self._decorators: typing.List = decorators or []
     
     def load(self, storage: Storage, name: str=''):
         storage = HierarchicalStorage(Storage(), storage)
-        task_factory = self._task_cls
+        item_factory = self._item_cls
         for decorator in self._decorators:
-            task_factory = decorator(task_factory)
+            item_factory = decorator(item_factory)
         
-        task = task_factory(
+        item = item_factory(
             store=storage, name=name, *self._args.args, **self._args.kwargs
         )
-        return task
+        return item
     
     def add_decorator(self, decorator):
         self._decorators.append(decorator)
+        
+    def add_decorators(self, decorators):
+        self._decorators.extend(decorators)
 
     def __call__(self, task: Task):
         self._task = task
         return self
 
 
-@singledispatch
-def task(t=None, args: Args=None, decorators=None):
-    return TaskLoader(t, args, decorators=decorators)
+
+class TaskLoader(Loader):
+
+    def __init__(self, task_cls: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):
+        super().__init__(task_cls, args, decorators)
+
+    def __call__(self, task: Task):
+        self._task = task
+        return self
 
 
-# TODO: DEFINE THIS.
-# @task.register
-# def _(t: function, args: Args=None, decorators=None):
-#     return TaskLoader(t, args, decorators=decorators)
+def decorate(loader: Loader, decorators=None):
+    loader.add_decorators(decorators)
 
 
-@task.register
-def _(args: Args, decorators=None):
-    return TaskLoader(args=args, decorators=decorators)
+def task_(loader: TaskLoader=None, *args, **kwargs):
+    return TaskLoader(loader, Args(*args, **kwargs))
 
+
+def task(*args, **kwargs):
+    return TaskLoader(args=Args(*args, **kwargs))
 
 
 class Sequence(Composite):

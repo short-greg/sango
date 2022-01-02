@@ -1,19 +1,23 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
+from functools import singledispatch
 import typing
 
-from sango.vars import Ref, Shared, Storage
-from .nodes import ClassArgFilter, Status, Task, TaskMeta, TypeFilter
-from typing import Generic, TypeVar
+from sango.vars import UNDEFINED, Args, HierarchicalStorage, Ref, Shared, Storage
+from .nodes import ClassArgFilter, Loader, Status, Task, TaskMeta, TypeFilter
+from typing import Any, Generic, TypeVar
 
 
 class StateMeta(TaskMeta):
 
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
-        kw['store'] = cls._update_var_stores(kw)
+        store = cls._update_var_stores(kw)
+        cls.__pre_init__(self, store)
         cls.__init__(self, *args, **kw)
         return self
+
 
 V = TypeVar('V')
 
@@ -22,14 +26,61 @@ Emission = TypeVar('Emission')
 
 class State(Generic[V], metaclass=StateMeta):
 
-    def __init__(self, store: Storage, name: str):
-
-        self._store = store
+    def __init__(self, name: str=''):
         self._name = name
+        
+    def __pre_init__(self, store: Storage):
+        self._store = store
+
+
+    def __getattribute__(self, key: str) -> Any:
+        try:
+            store: Storage = super().__getattribute__('_store')
+            if isinstance(store, HierarchicalStorage):
+                if store.contains(key, recursive=False):
+                    v = store.get(key, recursive=False)
+                    return v
+            else:
+                if store.contains(key):
+                    v = store.get(key)
+                    return v
+
+        except AttributeError:
+            pass
+        return super().__getattribute__(key)
+
+    @property
+    def name(self):
+        return self._name
 
     @abstractmethod
-    def enter(self) -> Emission:
+    def update(self) -> Emission:
         raise NotImplementedError
+    
+    def reset(self):
+        pass
+
+
+class StateType(Enum):
+
+    FINAL = 0
+    READY = 1
+    RUNNING = 2
+
+    @property
+    def done(self):
+        return self == StateType.FINAL
+
+
+class Discrete(State[V], metaclass=StateMeta):
+
+    def __init__(self, status: StateType=StateType.RUNNING, name: str=''):
+        self._name = name
+        self._status = status
+    
+    @property
+    def status(self):
+        return self._status
 
     @abstractmethod
     def update(self) -> Emission:
@@ -42,75 +93,75 @@ class Emission(Generic[V]):
     next_state: State[V]
     value: V = None
 
-    
-class StateLoader(object):
 
-    pass
+class StateRef(object):
+
+    def __init__(self, ref: str):
+
+        self._ref = ref
+
+    def lookup(self, states: typing.Dict[str, State]):
+
+        return states[self._ref]
+
+
+StateVar = typing.Union[State, StateRef]
+
+@singledispatch
+def process_state_var(state: State, states: typing.Dict[str, State]):
+    return state
+
+
+@process_state_var.register
+def _(state: StateRef, states: typing.Dict[str, State]):
+    return state.lookup(states)
+
+
+class StateLoader(Loader):
+
+    def __init__(self, state_cls: typing.Type[State]=UNDEFINED, args: Args=None, decorators=None):
+        super().__init__(state_cls, args, decorators)
+
+    def __call__(self, state: State):
+        self._state = state
+        return self
 
 
 class StateMachineMeta(TaskMeta):
 
     def _load_states(cls, store, kw):
-        tasks = []
+        states = {}
         for name, loader in ClassArgFilter([TypeFilter(StateLoader)]).filter(cls).items():
             if name in kw:
                 loader(kw[name])
                 del kw[name]
-            tasks.append(loader.load(store, name))
-        return tasks
+            states[name] = loader.load(store, name)
+        return states
 
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
-        states = cls._load_states(kw['store'], kw)
-
+        states = cls._load_states(store, kw)
+        start = states['start']
+        del states['start']
+        cls.__pre_init__(self, start, states, store)
         cls.__init__(self, *args, **kw)
         return self
 
 
 class StateMachine(Task, metaclass=StateMachineMeta):
     
-    def reset(self):
-        pass
+    def __pre_init__(self, start: State, states: typing.Dict[str, State], store: Storage):
 
-    def tick(self):
-        pass
-
-
-
-def state(self):
-    pass
-
-
-
-class FSM(StateMachine):
-
-    def __pre_init__(self, states: typing.List[State], store: Storage):
-
-        self._states = states
-        self._store = store
-
-    def __init__(self, start: State, states: typing.List[State], store: Storage=None, name: str=''):
-        
         self._start = start
         self._states = states
-        self._cur_state = self._start
+        self._store = store
     
     def reset(self):
-        
-        self._cur_state = self._start
-        self._start.enter()
+        pass
 
     def tick(self):
-
-        emission = self._cur_state.update()
-        if emission.next_state.status.done:
-            self._cur_state = emission.next_state
-            return self._cur_state.status
-        elif emission.next_state != self._cur_state:
-            self._cur_state = emission.next_state
-            self._cur_state.enter()
-        return Status.RUNNING
+        pass
 
     @property
     def cur_status(self):
@@ -118,6 +169,53 @@ class FSM(StateMachine):
         if self._cur_state.final:
             return self._cur_state.status
         return Status.RUNNING
+
+
+def decorate(state_loader: StateLoader, decorators):
+    state_loader.add_decorators(decorators)
+
+
+def state_(state_cls, *args, **kwargs):
+    return StateLoader(state_cls, Args(*args, **kwargs) )
+
+
+def state(*args, **kwargs):
+    return StateLoader(args=Args(*args, **kwargs))
+
+
+class FSM(StateMachine):
+
+    def __pre_init__(self, start: State, states: typing.Dict[str, State], store: Storage):
+
+        super().__pre_init__(start, states, store)
+        self._cur_state = self._start
+        self._cur_state.reset()
+    
+    def __init__(self, name: str=''):
+        
+        self._name = name
+    
+    def reset(self):
+        
+        self._cur_state = self._start
+        self._start.reset()
+
+    def tick(self):
+
+        emission = self._cur_state.update()
+        next_state = process_state_var(emission.next_state, self._states)
+        if next_state.status.done:
+            self._cur_state = next_state
+            return self._cur_state.status
+        elif next_state != self._cur_state:
+            self._cur_state = next_state
+            self._cur_state.reset()
+        return Status.RUNNING
+
+
+    @property
+    def cur_state(self):
+        return self._cur_state
 
 
 # class PlayState(State):
@@ -142,27 +240,3 @@ class FSM(StateMachine):
 #         if self.finished is True:
 #             return self._stopped
 #         return self
-
-        
-class T(FSM):
-
-    start = state()
-
-
-
-    pass
-
-class Factorized(StateMachine):
-
-    pass
-
-
-class PushDown(StateMachine):
-
-    pass
-
-
-
-class Discrete(State):
-
-    pass
