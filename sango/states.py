@@ -57,19 +57,34 @@ class State(Generic[V], metaclass=StateMeta):
     def update(self) -> Emission:
         raise NotImplementedError
     
+    @abstractmethod
+    def enter(self):
+        raise NotImplementedError
+    
     def reset(self):
         pass
 
 
 class StateType(Enum):
 
-    FINAL = 0
-    READY = 1
-    RUNNING = 2
+    SUCCESS = 0
+    FAILURE = 1
+    READY = 2
+    RUNNING = 3
 
     @property
-    def done(self):
-        return self == StateType.FINAL
+    def final(self):
+        return self == StateType.SUCCESS or self == StateType.FAILURE
+
+    @property
+    def status(self):
+        if self == StateType.SUCCESS:
+            return Status.SUCCESS
+        if self == StateType.FAILURE:
+            return Status.FAILURE
+        if self == StateType.READY:
+            return Status.READY
+        return Status.RUNNING
 
 
 class Discrete(State[V], metaclass=StateMeta):
@@ -79,19 +94,18 @@ class Discrete(State[V], metaclass=StateMeta):
         self._status = status
     
     @property
-    def status(self):
+    def status(self) -> StateType:
         return self._status
 
     @abstractmethod
     def update(self) -> Emission:
         raise NotImplementedError
-
-
-@dataclass
-class Emission(Generic[V]):
-
-    next_state: State[V]
-    value: V = None
+    
+    def enter(self):
+        self._status = StateType.READY
+    
+    def reset(self):
+        self.enter()
 
 
 class StateRef(object):
@@ -107,14 +121,33 @@ class StateRef(object):
 
 StateVar = typing.Union[State, StateRef]
 
-@singledispatch
-def process_state_var(state: State, states: typing.Dict[str, State]):
-    return state
+
+class Emission(Generic[V]):
+
+    def __init__(self, next_state: StateVar, value: V=None):
+        self._next_state = next_state
+        self._value = value
+    
+    def emit(self, states: typing.Dict[str, State]=None):
+        states = states or {}
+
+        if isinstance(self._next_state, StateRef):
+            state = self._next_state.lookup(states)
+        else:
+            state = self._next_state
+        state.enter()
+        return state, self._value
 
 
-@process_state_var.register
-def _(state: StateRef, states: typing.Dict[str, State]):
-    return state.lookup(states)
+
+# @singledispatch
+# def process_state_var(state: State, states: typing.Dict[str, State]):
+#     return state
+
+
+# @process_state_var.register
+# def _(state: StateRef, states: typing.Dict[str, State]):
+#     return state.lookup(states)
 
 
 class StateLoader(Loader):
@@ -165,10 +198,7 @@ class StateMachine(Task, metaclass=StateMachineMeta):
 
     @property
     def cur_status(self):
-
-        if self._cur_state.final:
-            return self._cur_state.status
-        return Status.RUNNING
+        return self._cur_state.status.status
 
 
 def decorate(state_loader: StateLoader, decorators):
@@ -185,7 +215,7 @@ def state(*args, **kwargs):
 
 class FSM(StateMachine):
 
-    def __pre_init__(self, start: State, states: typing.Dict[str, State], store: Storage):
+    def __pre_init__(self, start: Discrete, states: typing.Dict[str, Discrete], store: Storage):
 
         super().__pre_init__(start, states, store)
         self._cur_state = self._start
@@ -203,8 +233,8 @@ class FSM(StateMachine):
     def tick(self):
 
         emission = self._cur_state.update()
-        next_state = process_state_var(emission.next_state, self._states)
-        if next_state.status.done:
+        next_state, value = emission.emit(self._states)
+        if next_state.status.final:
             self._cur_state = next_state
             return self._cur_state.status
         elif next_state != self._cur_state:

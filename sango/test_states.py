@@ -46,20 +46,20 @@ class TestEmission:
     def test_next_state_is_correct(self):
 
         state = SimpleState(status=StateType.RUNNING)
-        emission = Emission[None](state)
-        assert emission.next_state == state
+        next_state, value = Emission[None](state).emit()
+        assert next_state == state
 
     def test_value_is_correct(self):
 
         state = SimpleState()
-        emission = Emission[None](state, None)
-        assert emission.value is None
+        next_state, value = Emission[None](state, None).emit()
+        assert value is None
 
     def test_value_when_float(self):
 
         state = EmissionState(status=StateType.RUNNING)
-        emission = Emission[float](state, 2.)
-        assert emission.value == 2.
+        next_state, value = Emission[float](state, 2.).emit()
+        assert value == 2.
 
 
 class TestStateWithStore:
@@ -67,8 +67,8 @@ class TestStateWithStore:
     def test_float_emission_is_2(self):
 
         state = FloatState2(name='x')
-        emission = state.update()
-        assert emission.value == 3.
+        _, value = state.update().emit()
+        assert value == 3.
 
     def test_name_is_correct(self):
         state = FloatState2(name='x')
@@ -77,23 +77,23 @@ class TestStateWithStore:
     def test_value_is_correct_after_enter(self):
         next_state = FloatState2(name='x')
         state = FloatState3(next_state, name='x')
-        emission = state.update()
+        next_state_, _ = state.update().emit({})
 
-        assert emission.next_state == next_state
+        assert next_state_ == next_state
 
     def test_status_is_correct(self):
-        next_state = FloatState2(name='x', status=StateType.FINAL)
+        next_state = FloatState2(name='x', status=StateType.SUCCESS)
         state = FloatState3(next_state, name='first')
-        emission = state.update()
+        next_state_, _ = state.update().emit()
 
-        assert emission.next_state == next_state
+        assert next_state_ == next_state
 
 
 class MachineTest(FSM):
 
     start = state_(FloatState3, next_state=StateRef('state2'))
     state2 = state_(FloatState3, next_state=StateRef('state3'))
-    state3 = state_(EmissionState, status=StateType.FINAL)
+    state3 = state_(EmissionState, status=StateType.SUCCESS)
 
 
 class TestFSM:
