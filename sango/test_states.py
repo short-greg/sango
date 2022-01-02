@@ -112,9 +112,8 @@ class TestFSM:
         machine.tick()
         assert machine.cur_state.name == 'state2'
 
-    # TODO: NEED TO UPDATE THIS!
-    # def test_basic_machine_reset_is_correct(self):
-    #     machine = MachineTest('tester')
-    #     machine.tick()
-    #     status = machine.tick()
-    #     assert status == Status.SUCCESS
+    def test_basic_machine_reset_is_correct(self):
+        machine = MachineTest('tester')
+        machine.tick()
+        machine.reset()
+        assert machine.status == Status.RUNNING

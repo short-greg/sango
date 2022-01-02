@@ -196,10 +196,6 @@ class StateMachine(Task, metaclass=StateMachineMeta):
     def tick(self):
         pass
 
-    @property
-    def cur_status(self):
-        return self._cur_state.status.status
-
 
 def decorate(state_loader: StateLoader, decorators):
     state_loader.add_decorators(decorators)
@@ -242,11 +238,13 @@ class FSM(StateMachine):
             self._cur_state.reset()
         return Status.RUNNING
 
-
     @property
     def cur_state(self):
         return self._cur_state
 
+    @property
+    def status(self):
+        return self._cur_state.status.status
 
 # class PlayState(State):
 
