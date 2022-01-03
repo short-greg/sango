@@ -5,7 +5,7 @@ from functools import singledispatch
 import typing
 
 from sango.vars import UNDEFINED, Args, HierarchicalStorage, Ref, Shared, Storage
-from .nodes import ClassArgFilter, Loader, Status, Task, TaskMeta, TypeFilter
+from .nodes import ClassArgFilter, Loader, Status, Task, TaskLoader, TaskMeta, TypeFilter
 from typing import Any, Generic, TypeVar
 
 
@@ -190,8 +190,30 @@ def decorate(state_loader: StateLoader, decorators):
     state_loader.add_decorators(decorators)
 
 
-def state_(state_cls, *args, **kwargs):
-    return StateLoader(state_cls, Args(*args, **kwargs) )
+# TODO: FINISH
+class TaskState(Discrete):
+    pass
+
+
+class TaskStateLoader(Loader):
+
+    def __init__(self, cls, failure_to: StateVar, success_to: StateVar):
+
+        self._cls = cls
+        self._success_to = success_to
+        self._failure_to = failure_to
+
+    def __call__(self, state: State):
+        self._state = state
+        return self
+
+
+def state_(cls: typing.Union[State, TaskLoader], *args, **kwargs):
+
+    if issubclass(cls, State):
+        return StateLoader(cls, Args(*args, **kwargs))
+    
+    return StateLoader(TaskStateLoader(cls))
 
 
 def state(*args, **kwargs):
