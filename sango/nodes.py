@@ -161,7 +161,7 @@ class Task(object, metaclass=TaskMeta):
 
     def __init__(self, name: str=''):
         self._name = name
-        self._cur_status = Status.READY
+        self._cur_status: Status = Status.READY
     
     def __pre_init__(self, store: Storage):
         self._store = store
@@ -661,15 +661,93 @@ class TickDecorator(object):
         self._node_cls = node_cls
         self._tick = tick
     
+    # do I want to call this "call?"
     def __call__(self, *args, **kwargs):
         node = self._node_cls(*args, **kwargs)
         node.tick = wraps(node.tick)(partial(self._tick, node, node.tick))
         return node
 
 
-def loads(decorator):
-    def _(loader: TaskLoader):
+class DecoratorLoader(object):
 
-        loader.add_decorator(decorator)
+    def __init__(self, decorator):
+
+        self._decorators = [decorator]
+
+    def __lshift__(self, other):
+        if isinstance(other, TaskLoader):
+            other.add_decorators(self._decorators)
+            return other
+
+        self._decorators.extend(other.decorators)
+        return self
+    
+    @property
+    def decorators(self):
+        return [*self._decorators]
+
+    def __call__(self, loader: TaskLoader):
+        loader.add_decorators(self._decorators)
         return loader
-    return _
+
+
+def loads(decorator):
+    return DecoratorLoader(decorator)
+
+
+def loads_(decorator, *args, **kwargs):
+    return DecoratorLoader(decorator(*args, **kwargs))
+
+
+
+
+
+class DecoratorMeta(TaskMeta):
+
+    def _load_tasks(cls, store, kw):
+        tasks = []
+        for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
+            if name in kw:
+                loader(kw[name])
+                del kw[name]
+            tasks.append(loader.load(store, name))
+        return tasks
+
+    def __call__(cls, *args, **kw):
+        self = cls.__new__(cls, *args, **kw)
+        store = cls._update_var_stores(kw)
+        task = cls._load_tasks(store, kw)['task']
+        cls.__pre_init__(self, task, store)
+        cls.__init__(self, *args, **kw)
+        return self
+
+
+class Decorator(Task, metaclass=DecoratorMeta):
+
+    def __pre_init__(self, task: Task, store: Storage=None):
+        super().__pre_init__(store)
+        self._task = task
+
+    @property
+    def tasks(self):
+        return self._task
+
+    @property
+    def status(self):
+        return self._cur_status
+    
+    @abstractmethod
+    def decorate(self):
+        raise NotImplementedError
+
+    def tick(self):
+        if self._cur_status.done:
+            return Status.DONE
+
+        status = self.decorate()
+        self._cur_status = status
+        return status
+    
+    def reset(self):
+        super().reset()
+        self._task.reset()
