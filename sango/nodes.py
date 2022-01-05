@@ -488,7 +488,6 @@ class Loader(object):
         return self
 
 
-
 class TaskLoader(Loader):
 
     def __init__(self, task_cls: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):

@@ -5,7 +5,7 @@ from functools import singledispatch
 import typing
 
 from sango.vars import UNDEFINED, Args, HierarchicalStorage, Ref, Shared, Storage
-from .nodes import ClassArgFilter, Loader, Status, Task, TaskLoader, TaskMeta, TypeFilter
+from .nodes import ClassArgFilter, Loader, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 
 
@@ -190,18 +190,39 @@ def decorate(state_loader: StateLoader, decorators):
     state_loader.add_decorators(decorators)
 
 
-# TODO: FINISH
 class TaskState(Discrete):
-    pass
+    
+    def __init__(self, task: Task, failure_to: StateVar, success_to: StateVar):
 
-
-class TaskStateLoader(Loader):
-
-    def __init__(self, cls, failure_to: StateVar, success_to: StateVar):
-
-        self._cls = cls
-        self._success_to = success_to
+        self._task = task
         self._failure_to = failure_to
+        self._success_to = success_to
+
+    def enter(self):
+
+        self._task.reset()
+
+    def update(self):
+
+        if self._task.status == Status.DONE:
+            return None
+
+        result = self._task.tick()
+        if result == Status.FAILURE:
+            return self._failure_to
+        elif result == Status.SUCCESS:
+            return self._success_to
+        
+        return self
+
+
+class TaskStateLoader(object):
+
+    def __init__(self, task_loader: TaskLoader, failure_to: StateVar, success_to: StateVar, decorators=None):
+
+        def load(store, name, *args, **kwargs):
+            return TaskState(task_loader.load(store, name, *args, **kwargs), failure_to, success_to)
+        super().__init__(load, decorators=decorators)
 
     def __call__(self, state: State):
         self._state = state
@@ -254,5 +275,40 @@ class FSM(StateMachine):
         return self._cur_state
 
     @property
-    def status(self):
+    def status(self) -> Status:
         return self._cur_state.status.status
+
+
+class FSMState(Discrete):
+    
+    def __init__(self, machine: FSM, **state_map):
+
+        self._machine = machine
+        self._state_map = state_map
+
+    def enter(self):
+
+        self._machine.reset()
+
+    def update(self):
+
+        if self._machine.status == Status.DONE:
+            return None
+
+        result = self._machine.tick()
+        if result.done:
+            return self._state_map[self._machine.cur_state.name]
+
+        return self
+
+
+class FSMStateLoader(object):
+    def __init__(self, state_loader: StateLoader, state_map: typing.Dict[str: State], decorators=None):
+
+        def load(store, name, *args, **kwargs):
+            return FSMState(state_loader.load(store, name, *args, **kwargs), **state_map)
+        super().__init__(load, decorators=decorators)
+
+    def __call__(self, state: State):
+        self._state = state
+        return self
