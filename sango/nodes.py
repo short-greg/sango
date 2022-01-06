@@ -469,7 +469,9 @@ class Loader(object):
     def load(self, storage: Storage, name: str=''):
         storage = HierarchicalStorage(Storage(), storage)
         item_factory = self._item_cls
-        for decorator in self._decorators:
+        if item_factory is UNDEFINED:
+            raise ValueError(f"Cls to load for {type(self).__name__} has not been defined")
+        for decorator in reversed(self._decorators):
             item_factory = decorator(item_factory)
         
         item = item_factory(
@@ -483,31 +485,33 @@ class Loader(object):
     def add_decorators(self, decorators):
         self._decorators.extend(decorators)
 
-    def __call__(self, task: Task):
-        self._task = task
+    def __call__(self, cls: typing.Type):
+        self._item_cls = cls
         return self
 
 
 class TaskLoader(Loader):
 
-    def __init__(self, task_cls: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):
-        super().__init__(task_cls, args, decorators)
+    pass
 
-    def __call__(self, task: Task):
-        self._task = task
-        return self
+    # def __init__(self, task_cls: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):
+    #     super().__init__(task_cls, args, decorators)
+
+    # def __call__(self, cls: typing.Type[Task]):
+    #     self._item_cls = cls
+    #     return self
 
 
 def decorate(loader: Loader, decorators=None):
     loader.add_decorators(decorators)
 
 
-def task_(loader: TaskLoader=None, *args, **kwargs):
-    return TaskLoader(loader, Args(*args, **kwargs))
+def task(cls: typing.Type[Task]):
+    return TaskLoader(cls)
 
 
-def task(*args, **kwargs):
-    return TaskLoader(args=Args(*args, **kwargs))
+def task_(cls: typing.Type[Task], *args, **kwargs):
+    return TaskLoader(cls, args=Args(*args, **kwargs))
 
 
 class Sequence(Composite):
@@ -679,6 +683,7 @@ class DecoratorLoader(object):
             other.add_decorators(self._decorators)
             return other
 
+        # other must be a DecoratorLoader
         self._decorators.extend(other.decorators)
         return self
     
@@ -692,14 +697,27 @@ class DecoratorLoader(object):
 
 
 def loads(decorator):
+    """Loads a first order decorator
+
+    Args:
+        decorator: The tick decorator to load
+
+    Returns:
+        DecoratorLoader
+    """
     return DecoratorLoader(decorator)
 
 
 def loads_(decorator, *args, **kwargs):
+    """Loads a decorator that takes arguments (2nd order decorator)
+
+    Args:
+        decorator: The tick decorator to load
+
+    Returns:
+        DecoratorLoader
+    """
     return DecoratorLoader(decorator(*args, **kwargs))
-
-
-
 
 
 class DecoratorMeta(TaskMeta):

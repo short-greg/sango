@@ -303,12 +303,12 @@ class FSMState(Discrete):
 
 
 class FSMStateLoader(object):
-    def __init__(self, state_loader: StateLoader, state_map: typing.Dict[str: State], decorators=None):
+    def __init__(self, state_loader: StateLoader, state_map: typing.Dict[str, State], decorators=None):
 
         def load(store, name, *args, **kwargs):
             return FSMState(state_loader.load(store, name, *args, **kwargs), **state_map)
         super().__init__(load, decorators=decorators)
 
-    def __call__(self, state: State):
+    def __call__(self, state: Discrete):
         self._state = state
         return self

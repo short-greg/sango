@@ -2,7 +2,7 @@ from functools import wraps
 import pytest
 
 from sango.vars import Args, Storage, StoreVar
-from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, TaskLoader, Tree, TypeFilter, VarStorer, fail, fail_on_first, loads, neg, succeed, succeed_on_first, task, until, vals, ArgFilter, ClassArgFilter, var
+from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, Tree, TypeFilter, VarStorer, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
 
 class TestStatus:
 
@@ -88,6 +88,7 @@ class DummyRange(Conditional):
             self._idx += 1
             return False
         return True
+
 
 class TestArgFilter:
 
@@ -297,7 +298,7 @@ class TestTree:
     def test_tree_with_one_sequence(self):
 
         class X(Tree):
-            entry = task(DummyPositive)
+            entry = task_(DummyPositive)
         
         seq = X()
         assert isinstance(seq, Tree)
@@ -308,8 +309,8 @@ class TestTree:
         class X(Tree):
             @task
             class entry(Fallback):
-                pos = task(DummyPositive)
-                neg = task(DummyPositive)
+                pos = task_(DummyPositive)
+                neg = task_(DummyPositive)
         
         seq = X()
         assert isinstance(seq, Tree)
@@ -320,7 +321,7 @@ class TestTree:
         class X(Tree):
             @task
             class entry(Fallback):
-                pos = task(DummyPositive)
+                pos = task_(DummyPositive)
         
         tree = X()
         status = tree.tick()
@@ -335,8 +336,8 @@ class TestDecorators:
             @loads(neg)
             @task
             class entry(Fallback):
-                pos = task(DummyPositive)
-                neg = task(DummyNegative)
+                pos = task_(DummyPositive)
+                neg = task_(DummyNegative)
         
         tree = X()
         status = tree.tick()
@@ -348,8 +349,8 @@ class TestDecorators:
             @task
             @neg
             class entry(Fallback):
-                pos = task(DummyPositive)
-                neg = task(DummyNegative)
+                pos = task_(DummyPositive)
+                neg = task_(DummyNegative)
         
         tree = X()
         status = tree.tick()
@@ -361,8 +362,8 @@ class TestDecorators:
             @task
             @succeed
             class entry(Sequence):
-                neg = task(DummyNegative)
-                pos = task(DummyPositive)
+                neg = task_(DummyNegative)
+                pos = task_(DummyPositive)
         
         tree = X()
         status = tree.tick()
@@ -374,8 +375,8 @@ class TestDecorators:
             @task
             @until
             class entry(Sequence):
-                range = task(DummyRange)
-                pos = task(DummyPositive)
+                range = task_(DummyRange)
+                pos = task_(DummyPositive)
         
         tree = X()
         status = tree.tick()
@@ -391,7 +392,7 @@ class TestParallelTask:
     def test_num_elements_with_one_element(self):
 
         class Pos(Parallel):
-            pos = task(DummyPositive)
+            pos = task_(DummyPositive)
         
         seq = Pos()
         assert seq.n == 1
@@ -399,7 +400,7 @@ class TestParallelTask:
     def test_tick_with_one_element(self):
 
         class Pos(Parallel):
-            pos = task(DummyPositive)
+            pos = task_(DummyPositive)
         
         seq = Pos()
         status = seq.tick()
@@ -411,8 +412,8 @@ class TestParallelTask:
             @task
             @fail_on_first
             class entry(Parallel):
-                pos = task(DummyAction)
-                neg = task(DummyNegative)
+                pos = task_(DummyAction)
+                neg = task_(DummyNegative)
 
         
         tree = X()
@@ -426,9 +427,71 @@ class TestParallelTask:
             @task
             @succeed_on_first
             class entry(Parallel):
-                pos = task(DummyAction)
-                neg = task(DummyPositive)
+                pos = task_(DummyAction)
+                neg = task_(DummyPositive)
 
         tree = X()
         status = tree.tick()
         assert status == Status.SUCCESS
+
+
+def iterate_over(iterations: int):
+
+    n_iterations = iterations
+    def _(node: Task):
+        i = 0
+        def tick(node: Task, wrapped_tick):
+            nonlocal i
+            status = wrapped_tick()
+            i += 1
+            if i >= n_iterations:
+                return Status.SUCCESS
+            return Status.FAILURE
+        return TickDecorator(node, tick)
+    return _
+
+
+class TestDecoratorLoader:
+
+    def test_with_one_decorator_and_loader(self):
+
+        loader = loads(fail) << task_(DummyPositive)
+        assert isinstance(loader, TaskLoader)
+    
+    def test_with_two_decorators(self):
+
+        loader = loads(fail) << loads(succeed)
+        assert loader.decorators == [fail, succeed]
+
+    def test_with_two_decorators(self):
+
+        loader = loads(fail) << loads(succeed) << task_(DummyPositive)
+        assert isinstance(loader, TaskLoader)
+
+    def test_tick_with_two_decorators(self):
+
+        loader = loads(fail) << loads(succeed) << task_(DummyPositive)
+        task = loader.load(Storage(), "dummy")
+        status = task.tick()
+        assert status == Status.FAILURE
+
+    def test_tick_with_two_decorators_is_success(self):
+
+        loader = loads(succeed) << loads(fail) <<  task_(DummyPositive)
+        task = loader.load(Storage(), "dummy")
+        status = task.tick()
+        assert status == Status.SUCCESS
+
+    def test_tick_with_two_decorators_and_second_order_is_success(self):
+
+        loader = loads_(iterate_over, 1) << loads(fail) <<  task_(DummyPositive)
+        task = loader.load(Storage(), "dummy")
+        status = task.tick()
+        assert status == Status.SUCCESS
+
+    def test_tick_with_two_decorators_and_second_order_is_failure(self):
+
+        loader = loads_(iterate_over, 2) << loads(fail) <<  task_(DummyPositive)
+        task = loader.load(Storage(), "dummy")
+        status = task.tick()
+        assert status == Status.FAILURE
