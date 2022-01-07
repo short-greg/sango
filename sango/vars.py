@@ -183,6 +183,10 @@ class Ref(object):
         return Var(storage[self._var_name].value)
 
 
+# TODO: StoreRef
+# TODO: Can store in parent
+# TODO: Can store in global
+
 class HierarchicalStorage(AbstractStorage):
 
     def __init__(self, child: AbstractStorage, parent: AbstractStorage=None):
@@ -249,6 +253,18 @@ HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, r
 @dataclass
 class Condition:
     value: str
+
+
+class _ref(object):
+
+    def __setattr__(self, __name: str, __value) -> None:
+        raise AttributeError('Cannot set {__name} for ref object')
+
+    def __getattr__(self, key):
+
+        return Ref(key)
+
+ref = _ref()
 
 
 class ConditionSet(object):

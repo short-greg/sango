@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod, abstractproperty
 from enum import Enum
 import typing
 from functools import partial, singledispatch, singledispatchmethod
-from typing import Any, Iterator
+from typing import Any, Iterator, Type
 from sango.vars import UNDEFINED, HierarchicalStorage, Storage
 from .vars import AbstractStorage, Args, HierarchicalStorage, Ref, StoreVar, Var
 from .utils import coalesce
@@ -137,13 +137,21 @@ def var(val=UNDEFINED):
     return VarStorer(Var(val))
 
 
+def ref_is_external(task_cls, default=True):
+    
+    if not isinstance(task_cls, Type): return True
+    if not issubclass(task_cls, Tree): return True
+
+    return getattr(task_cls, '__external_ref__', default)
+
+
 class TaskMeta(type):
 
     def _update_var_stores(cls, kw):
         
         var_stores = ClassArgFilter([TypeFilter(VarStorer)]).filter(cls)
         if 'store' in kw:
-            store = kw.get('store')
+            store = kw['store']
             del kw['store']
         else:
             store = HierarchicalStorage(Storage())
@@ -156,6 +164,12 @@ class TaskMeta(type):
             store[name] = storer.value
         return store
 
+    def _get_reference(cls, kw):
+        if 'reference' in kw:
+            reference = kw['reference']
+            del kw['reference']
+            return reference
+
 
 class Task(object, metaclass=TaskMeta):
 
@@ -163,8 +177,9 @@ class Task(object, metaclass=TaskMeta):
         self._name = name
         self._cur_status: Status = Status.READY
     
-    def __pre_init__(self, store: Storage):
+    def __pre_init__(self, store: Storage, reference):
         self._store = store
+        self._reference = reference
 
     def reset(self):
         self._cur_status = Status.READY
@@ -211,16 +226,16 @@ class AtomicMeta(TaskMeta):
 
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
-        cls.__pre_init__(self, store)
+        reference = cls._get_reference(kw)
+        cls.__pre_init__(self, store, reference)
         cls.__init__(self, *args, **kw)
         return self
     
 
 class Atomic(Task, metaclass=AtomicMeta):
     
-    def __pre_init__(self, store: Storage):
-
-        self._store = store
+    def __pre_init__(self, store: Storage, reference):
+        super().__pre_init__(store, reference)
 
 
 class Planner(ABC):
@@ -320,7 +335,8 @@ class CompositeMeta(TaskMeta):
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
         tasks = cls._load_tasks(store, kw)
-        cls.__pre_init__(self, tasks, store)
+        reference = cls._get_reference(kw)
+        cls.__pre_init__(self, tasks, store, reference)
         cls.__init__(self, *args, **kw)
         return self
 
@@ -333,8 +349,8 @@ class Composite(Task, metaclass=CompositeMeta):
         super().__init__(name)
         self._planner = planner or LinearPlanner(self._tasks)
 
-    def __pre_init__(self, tasks: typing.List[Task], store: Storage=None):
-        super().__pre_init__(store)
+    def __pre_init__(self, tasks: typing.List[Task], store: Storage, reference):
+        super().__pre_init__(store, reference)
         self._tasks = tasks
 
     @property
@@ -369,28 +385,48 @@ class Composite(Task, metaclass=CompositeMeta):
 
 class TreeMeta(TaskMeta):
 
-    def _load_entry(cls, store, kw):
+    def _load_entry(cls, store, reference, kw):
         entry = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)['entry']
         if entry in kw:
             entry(kw['entry'])
             del kw['entry']
-        entry = entry.load(store, 'entry')
+        entry = entry.load(store, 'entry', reference)
         return entry
+    
+    def _get_reference(cls, self, kw, external_default=True):
+
+        if not ref_is_external(cls, external_default):
+            if 'reference' in kw:
+                raise ValueError(f'Must not define ref object for tree {cls.__qualname__} because ref is external')
+
+            return self
+        if 'reference' not in kw:
+            raise ValueError(f'Must pass in reference object to tree {cls.__qualname__} with external ref')
+        
+        reference = kw['reference']
+        del kw['reference']
+
+        if reference is None:
+            raise ValueError(f'Value of None is not valid for reference object for tree {cls.__qualname__}')
+
+        return reference
 
     def __call__(cls, *args, **kw):
 
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
-        entry = cls._load_entry(store, kw)
-        cls.__pre_init__(self, entry, store)
+
+        reference = cls._get_reference(self, kw, False)
+        entry = cls._load_entry(store, reference, kw)
+        cls.__pre_init__(self, entry, store, reference)
         cls.__init__(self, *args, **kw)
         return self
 
 
 class Tree(Task, metaclass=TreeMeta):
 
-    def __pre_init__(self, entry: Task, store: Storage):
-        super().__pre_init__(store)
+    def __pre_init__(self, entry: Task, store: Storage, reference):
+        super().__pre_init__(store, reference)
         self.entry = entry
     
     def tick(self) -> Status:        
@@ -410,29 +446,6 @@ class Action(Atomic):
         return self._cur_status
 
 
-@singledispatch
-def action(action, args: Args):
-    
-    def _(store: Storage):
-        return action(*args.args, **args.kwargs, _store=store)
-
-    return _
-
-
-@action.register
-def _(args: Args):
-    
-    def _(cls):
-        x = cls
-        def __new__(cls, store: Storage):
-            
-            x.__new__(*args.args, **args.kwargs, _store=store)
-
-        cls.__new__ = __new__
-
-    return _
- 
-
 class Conditional(Atomic):
 
     @abstractmethod
@@ -446,36 +459,28 @@ class Conditional(Atomic):
         return self._cur_status
 
 
-# class ConditionalVar(Task, Var)
-
-# action(Args(Ref(''), Ref('')))
-
-# class ActionFunc(Action):
-
-#     func = InitVar()
-
-#     def __post_init__(self, func):
-#         return super().__post_init__()
-
-
 class Loader(object):
 
     def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None, decorators=None):
 
-        self._item_cls = cls
+        self._cls = cls
         self._args = args or Args()
         self._decorators: typing.List = decorators or []
     
-    def load(self, storage: Storage, name: str=''):
+    def load(self, storage: Storage, name: str='', reference=None):
         storage = HierarchicalStorage(Storage(), storage)
-        item_factory = self._item_cls
-        if item_factory is UNDEFINED:
+        cls = self._cls
+        if cls is UNDEFINED:
             raise ValueError(f"Cls to load for {type(self).__name__} has not been defined")
         for decorator in reversed(self._decorators):
-            item_factory = decorator(item_factory)
+            cls = decorator(cls)
         
-        item = item_factory(
-            store=storage, name=name, *self._args.args, **self._args.kwargs
+        kwargs = {}
+        if not ref_is_external(self._cls):
+            kwargs['reference'] = reference
+
+        item = cls(
+            store=storage, name=name, *self._args.args, **self._args.kwargs, **kwargs
         )
         return item
     
@@ -486,7 +491,7 @@ class Loader(object):
         self._decorators.extend(decorators)
 
     def __call__(self, cls: typing.Type):
-        self._item_cls = cls
+        self._cls = cls
         return self
 
 
@@ -500,10 +505,6 @@ class TaskLoader(Loader):
     # def __call__(self, cls: typing.Type[Task]):
     #     self._item_cls = cls
     #     return self
-
-
-def decorate(loader: Loader, decorators=None):
-    loader.add_decorators(decorators)
 
 
 def task(cls: typing.Type[Task]):
@@ -720,52 +721,211 @@ def loads_(decorator, *args, **kwargs):
     return DecoratorLoader(decorator(*args, **kwargs))
 
 
-class DecoratorMeta(TaskMeta):
-
-    def _load_tasks(cls, store, kw):
-        tasks = []
-        for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
-            if name in kw:
-                loader(kw[name])
-                del kw[name]
-            tasks.append(loader.load(store, name))
-        return tasks
-
-    def __call__(cls, *args, **kw):
-        self = cls.__new__(cls, *args, **kw)
-        store = cls._update_var_stores(kw)
-        task = cls._load_tasks(store, kw)['task']
-        cls.__pre_init__(self, task, store)
-        cls.__init__(self, *args, **kw)
-        return self
+STORE_REF = object()
 
 
-class Decorator(Task, metaclass=DecoratorMeta):
+class RefMixin(object):
 
-    def __pre_init__(self, task: Task, store: Storage=None):
-        super().__pre_init__(store)
-        self._task = task
+    @classmethod
+    def _process_ref_arg(cls, arg, store):
 
-    @property
-    def tasks(self):
-        return self._task
+        if isinstance(arg, Ref):
+            return arg.shared(store).value
 
-    @property
-    def status(self):
-        return self._cur_status
+        elif arg == STORE_REF:
+            return store
+        
+        return arg
+
+    @classmethod
+    def _process_ref_args(cls, args: Args, store):
+
+        return Args(
+            *[cls._process_ref_arg(arg, store) for arg in args.args],
+            **{k: cls._process_ref_arg(arg, store) for k, arg in args.kwargs}
+        )
+
+    @classmethod
+    def _get_ref(cls, reference, member):
+        return getattr(reference, member)
+
+    @classmethod
+    def _execute_ref(cls, reference, member, args: Args, store):
+        args = cls._process_ref_args(args, store)
+        return getattr(reference, member)(*args.args, **args.kwargs)
+
+
+class ActionRef(Action, RefMixin):
     
-    @abstractmethod
-    def decorate(self):
-        raise NotImplementedError
+    def __init__(self, name: str, action: str, args: Args):
+        super().__init__(name)
 
-    def tick(self):
-        if self._cur_status.done:
-            return Status.DONE
+        if self._reference is None:
+            raise ValueError('Reference object must be defined to create an ActionReference')
 
-        status = self.decorate()
-        self._cur_status = status
-        return status
+        self._action_str = action
+        self._args = args
+
+    def act(self):
+        return self._execute_ref(self._reference, self._action_str, self._args, self._store)
+
+
+class ConditionalVarRef(Conditional, RefMixin):
+
+    def __init__(self, name: str, condition: str):
+        super().__init__(name)
+
+        if self._reference is None:
+            raise ValueError('Reference object must be defined to create a ConditionalReference')
+        
+        self._condition_str = condition
+
+    def check(self):
+        return self._get_ref(self._reference, self._condition_str)
+
+
+class ConditionalRef(Conditional, RefMixin):
     
-    def reset(self):
-        super().reset()
-        self._task.reset()
+    def __init__(self, name: str, condition: str, args: Args):
+        super().__init__(name)
+
+        if self._reference is None:
+            raise ValueError('Reference object must be defined to create a ConditionalReference')
+        
+        self._condition_str = condition
+        self._args = args
+
+    def check(self):
+        return self._execute_ref(self._reference, self._condition_str, self._args, self._store)
+
+
+def action(act: str, *args, **kwargs):
+    return TaskLoader(ActionRef, Args(act, *args, **kwargs))
+
+
+def cond(check: str, *args, **kwargs):
+    return TaskLoader(ConditionalRef, Args(check, *args, **kwargs))
+
+
+def condvar(check: str):
+    return TaskLoader(ConditionalVarRef, Args(check))
+
+
+# def decorate(loader: Loader, decorators=None):
+#     loader.add_decorators(decorators)
+
+
+# @singledispatch
+# def action(action, args: Args):
+    
+#     def _(store: Storage):
+#         return action(*args.args, **args.kwargs, _store=store)
+
+#     return _
+
+
+# @action.register
+# def _(args: Args):
+    
+#     def _(cls):
+#         x = cls
+#         def __new__(cls, store: Storage):
+            
+#             x.__new__(*args.args, **args.kwargs, _store=store)
+
+#         cls.__new__ = __new__
+
+#     return _
+
+
+# class DecoratorRef(Task):
+
+#     def __init__(self, name: str, decoration: str, args: Args, task: Task):
+#         super().__init__(name)
+
+#         if self._reference is None:
+#             raise ValueError('Reference object must be defined to create a Decorator')
+        
+#         self._decoration_str = decoration
+
+#     def decorate(self):
+#         return self._decoration()
+
+# def decorator(decoration: str, *args, **kwargs):
+
+#     def _(node: Task):
+#         return DecoratorRef(
+#             '', decoration, Args(args, kwargs), node
+#         )
+#     # return DecoratorLoader(_)
+
+
+# def context(cont: str, *args, **kwargs):
+
+#     def _(node: Task):
+#         return ContextRef(
+#             '', cont, Args(args, kwargs), node
+#         )
+#     # return DecoratorLoader(_)
+
+# decorator('progress_bar') << action('train')
+# need to think a bit more about this
+
+# def decorator(decorate: str, use_store: bool=False):
+
+#     def decorate()
+#     # Determine how to do this
+#     return TaskLoader(DecoratorRef, Args())
+#     # return DecoratorLoader(DecoratorRef)
+
+
+# class DecoratorMeta(TaskMeta):
+
+#     def _load_tasks(cls, store, kw):
+#         tasks = []
+#         for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
+#             if name in kw:
+#                 loader(kw[name])
+#                 del kw[name]
+#             tasks.append(loader.load(store, name))
+#         return tasks
+
+#     def __call__(cls, *args, **kw):
+#         self = cls.__new__(cls, *args, **kw)
+#         store = cls._update_var_stores(kw)
+#         task = cls._load_tasks(store, kw)['task']
+#         reference = cls._get_reference(kw)
+#         cls.__pre_init__(self, task, store, reference)
+#         cls.__init__(self, *args, **kw)
+#         return self
+
+
+# class Decorator(Task, metaclass=DecoratorMeta):
+
+#     def __pre_init__(self, task: Task, store: Storage=None):
+#         super().__pre_init__(store)
+#         self._task = task
+
+#     @property
+#     def tasks(self):
+#         return self._task
+
+#     @property
+#     def status(self):
+#         return self._cur_status
+    
+#     @abstractmethod
+#     def decorate(self):
+#         raise NotImplementedError
+
+#     def tick(self):
+#         if self._cur_status.done:
+#             return Status.DONE
+
+#         status = self.decorate()
+#         self._cur_status = status
+#         return status
+    
+#     def reset(self):
+#         super().reset()
+#         self._task.reset()
