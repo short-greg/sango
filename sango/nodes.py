@@ -959,6 +959,22 @@ def loads_(decorator, *args, **kwargs):
     """
     return DecoratorLoader(decorator(*args, **kwargs))
 
+
+
+# TODO: Complete the following
+
+class TaskFunc:
+    pass
+
+
+def func():
+    pass
+
+
+def func_():
+    pass
+
+
 # def decorate(loader: Loader, decorators=None):
 #     loader.add_decorators(decorators)
 
