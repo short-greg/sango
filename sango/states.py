@@ -140,13 +140,14 @@ class Emission(Generic[V]):
 
 
 class StateLoader(Loader):
+    pass
 
-    def __init__(self, state_cls: typing.Type[State]=UNDEFINED, args: Args=None, decorators=None):
-        super().__init__(state_cls, args, decorators)
+    # def __init__(self, state_cls: typing.Type[State]=UNDEFINED, args: Args=None, decorators=None):
+    #     super().__init__(state_cls, args, decorators)
 
-    def __call__(self, state: State):
-        self._state = state
-        return self
+    # def __call__(self, state: State):
+    #     self._state = state
+    #     return self
 
 
 class StateMachineMeta(TaskMeta):

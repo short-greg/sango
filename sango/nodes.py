@@ -675,50 +675,147 @@ class TickDecorator(object):
 
 class DecoratorLoader(object):
 
-    def __init__(self, decorator):
+    @singledispatchmethod
+    def __call__(self, loader):
+        pass
 
-        self._decorators = [decorator]
-
-    def __lshift__(self, other):
-        if isinstance(other, TaskLoader):
-            other.add_decorators(self._decorators)
-            return other
-
-        # other must be a DecoratorLoader
-        self._decorators.extend(other.decorators)
-        return self
+    @__call__.register
+    def _(self, loader: Loader):
+        pass
     
-    @property
-    def decorators(self):
-        return [*self._decorators]
+    def __lshift__(self, other):
+        pass
 
-    def __call__(self, loader: TaskLoader):
-        loader.add_decorators(self._decorators)
-        return loader
+    def append(self, other):
+        pass
 
+    def prepend(self, other):
+        pass
 
-def loads(decorator):
-    """Loads a first order decorator
-
-    Args:
-        decorator: The tick decorator to load
-
-    Returns:
-        DecoratorLoader
-    """
-    return DecoratorLoader(decorator)
+    def decorate(self, item):
+        pass
 
 
-def loads_(decorator, *args, **kwargs):
-    """Loads a decorator that takes arguments (2nd order decorator)
+class DecoratorSequenceLoader(DecoratorLoader):
 
-    Args:
-        decorator: The tick decorator to load
+    def __init__(self, decorators: typing.List[DecoratorLoader]):
 
-    Returns:
-        DecoratorLoader
-    """
-    return DecoratorLoader(decorator(*args, **kwargs))
+        super().__init__()
+        self._decorators = decorators
+
+    @singledispatchmethod
+    def __call__(self, loader):
+        return self.prepend(loader)
+
+    @__call__.register
+    def _(self, loader: Loader):
+        return loader.add_decorators(self._decorators)
+    
+    def __lshift__(self, other):
+        return self.prepend(other)
+
+    def append(self, other):
+        return DecoratorSequenceLoader(self, other)
+
+    def prepend(self, other):
+        return DecoratorSequenceLoader(other, self)
+
+    def decorate(self, item):
+        
+        for decorator in reversed(self._decorators):
+            item = decorator.decorate(item)
+        return item
+    
+    @classmethod
+    def from_pair(cls, first, second):
+
+        loaders = []
+        if isinstance(first, DecoratorSequenceLoader):
+            loaders.extend(first._decorators)
+        else:
+            loaders.append(first)
+        
+        if isinstance(second, DecoratorSequenceLoader):
+            loaders.extend(second._decorators)
+        else:
+            loaders.append(second)
+        return DecoratorSequenceLoader(loaders)
+
+
+class TaskDecorator(Task):
+    
+    def __init__(self, name: str, task: Task):
+
+        super()._init__(name)
+        self._task = task
+    
+    @abstractmethod
+    def decorate(self):
+        raise NotImplementedError
+
+    def tick(self):
+
+        if self._cur_status.done:
+            return Status.DONE
+
+        return self.decorate()
+
+
+class TaskDecoratorLoader(DecoratorLoader):
+
+    def __init__(self, decorator: TaskDecorator):
+
+        super().__init__()
+        self._decorator = decorator
+
+    @singledispatchmethod
+    def __call__(self, loader):
+        return self.prepend(loader)
+
+    @__call__.register
+    def _(self, loader: Loader):
+        return loader.add_decorators(self)
+    
+    def __lshift__(self, other):
+        return self.prepend(other)
+
+    def append(self, other):
+        return DecoratorSequenceLoader(self, other)
+
+    def prepend(self, other):
+        return DecoratorSequenceLoader(other, self)
+
+    def decorate(self, item):
+        return self._decorator(item)
+
+
+class TickDecoratorLoader(DecoratorLoader):
+
+    def __init__(self, decorator: TaskDecorator):
+
+        super().__init__()
+        self._decorator = decorator
+
+    @singledispatchmethod
+    def __call__(self, loader):
+        return self.prepend(loader)
+
+    @__call__.register
+    def _(self, loader: Loader):
+        return loader.add_decorators(self)
+    
+    def __lshift__(self, other):
+        return self.prepend(other)
+
+    def append(self, other):
+        return DecoratorSequenceLoader(self, other)
+
+    def prepend(self, other):
+        return DecoratorSequenceLoader(other, self)
+
+    def decorate(self, item):
+        return self._decorator(item)
+
 
 
 STORE_REF = object()
@@ -797,6 +894,23 @@ class ConditionalRef(Conditional, RefMixin):
 
     def check(self):
         return self._execute_ref(self._reference, self._condition_str, self._args, self._store)
+# TODO: FINISH!!!
+
+
+class TaskRefDecorator(TaskDecorator, RefMixin):
+
+    def __init__(self, name: str, decoration: str, args: Args, task: Task):
+        super().__init__(name, task)
+
+        if self._reference is None:
+            raise ValueError('Reference object must be defined to create a Decorator')
+        
+        self._decoration_str = decoration
+        self._args = args
+        self._args.kwargs['task'] = task
+
+    def decorate(self):
+        return self._execute_ref(self._reference, self._decoration_str, self._args, self._store)
 
 
 def action(act: str, *args, **kwargs):
@@ -810,6 +924,40 @@ def cond(check: str, *args, **kwargs):
 def condvar(check: str):
     return TaskLoader(ConditionalVarRef, Args(check))
 
+
+@singledispatch
+def loads(decorator):
+    """Loads a first order decorator
+
+    Args:
+        decorator: The tick decorator to load
+
+    Returns:
+        DecoratorLoader
+    """
+    return DecoratorLoader(decorator)
+
+@loads.register
+def _(decorator: type):
+    if issubclass(decorator, TickDecorator):
+        pass
+
+
+@loads.register
+def _(decorator: TaskDecorator):
+    pass
+
+
+def loads_(decorator, *args, **kwargs):
+    """Loads a decorator that takes arguments (2nd order decorator)
+
+    Args:
+        decorator: The tick decorator to load
+
+    Returns:
+        DecoratorLoader
+    """
+    return DecoratorLoader(decorator(*args, **kwargs))
 
 # def decorate(loader: Loader, decorators=None):
 #     loader.add_decorators(decorators)
