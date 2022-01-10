@@ -1043,7 +1043,12 @@ def loads_(decorator, *args, **kwargs):
 
 class TaskFunc(object):
     
-    def __init__(self, task_cls: typing.Type, func_vars: typing.List[str], init_vars: typing.List[str]):
+    def __init__(
+        self, task_cls: typing.Type, 
+        func_vars: typing.List[str], 
+        init_vars: typing.List[str],
+        return_vars: typing.List[str]
+    ):
         super().__init__()
         
         self._task_cls = task_cls
@@ -1063,11 +1068,8 @@ class TaskFunc(object):
         for a, _a in zip(self._init_vars, args):
             kwargs[a] = _a
         
-        # TODO: Class would need to override the 
-        # tick function and provide optional args.. 
-        # I think this is the best approach
         self._task.tick(**kwargs)
-
+        # getattr(self._task, )
 
 def func(func_vars: typing.List[str], init_vars: typing.List[str]):
     
@@ -1077,123 +1079,3 @@ def func(func_vars: typing.List[str], init_vars: typing.List[str]):
 
 def func_(task_cls: typing.Type[Task], func_vars: typing.List[str], init_vars: typing.List[str]):
     return TaskFunc(task_cls, func_vars, init_vars)
-
-
-# def decorate(loader: Loader, decorators=None):
-#     loader.add_decorators(decorators)
-
-
-# @singledispatch
-# def action(action, args: Args):
-    
-#     def _(store: Storage):
-#         return action(*args.args, **args.kwargs, _store=store)
-
-#     return _
-
-
-# @action.register
-# def _(args: Args):
-    
-#     def _(cls):
-#         x = cls
-#         def __new__(cls, store: Storage):
-            
-#             x.__new__(*args.args, **args.kwargs, _store=store)
-
-#         cls.__new__ = __new__
-
-#     return _
-
-
-# class DecoratorRef(Task):
-
-#     def __init__(self, name: str, decoration: str, args: Args, task: Task):
-#         super().__init__(name)
-
-#         if self._reference is None:
-#             raise ValueError('Reference object must be defined to create a Decorator')
-        
-#         self._decoration_str = decoration
-
-#     def decorate(self):
-#         return self._decoration()
-
-# def decorator(decoration: str, *args, **kwargs):
-
-#     def _(node: Task):
-#         return DecoratorRef(
-#             '', decoration, Args(args, kwargs), node
-#         )
-#     # return DecoratorLoader(_)
-
-
-# def context(cont: str, *args, **kwargs):
-
-#     def _(node: Task):
-#         return ContextRef(
-#             '', cont, Args(args, kwargs), node
-#         )
-#     # return DecoratorLoader(_)
-
-# decorator('progress_bar') << action('train')
-# need to think a bit more about this
-
-# def decorator(decorate: str, use_store: bool=False):
-
-#     def decorate()
-#     # Determine how to do this
-#     return TaskLoader(DecoratorRef, Args())
-#     # return DecoratorLoader(DecoratorRef)
-
-
-# class DecoratorMeta(TaskMeta):
-
-#     def _load_tasks(cls, store, kw):
-#         tasks = []
-#         for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
-#             if name in kw:
-#                 loader(kw[name])
-#                 del kw[name]
-#             tasks.append(loader.load(store, name))
-#         return tasks
-
-#     def __call__(cls, *args, **kw):
-#         self = cls.__new__(cls, *args, **kw)
-#         store = cls._update_var_stores(kw)
-#         task = cls._load_tasks(store, kw)['task']
-#         reference = cls._get_reference(kw)
-#         cls.__pre_init__(self, task, store, reference)
-#         cls.__init__(self, *args, **kw)
-#         return self
-
-
-# class Decorator(Task, metaclass=DecoratorMeta):
-
-#     def __pre_init__(self, task: Task, store: Storage=None):
-#         super().__pre_init__(store)
-#         self._task = task
-
-#     @property
-#     def tasks(self):
-#         return self._task
-
-#     @property
-#     def status(self):
-#         return self._cur_status
-    
-#     @abstractmethod
-#     def decorate(self):
-#         raise NotImplementedError
-
-#     def tick(self):
-#         if self._cur_status.done:
-#             return Status.DONE
-
-#         status = self.decorate()
-#         self._cur_status = status
-#         return status
-    
-#     def reset(self):
-#         super().reset()
-#         self._task.reset()
