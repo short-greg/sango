@@ -1,3 +1,30 @@
+"""
+Nodes for buidling a Behavior Tree. A tree can be built hierarchically within
+Python's class system by specifying which members are tasks and which
+are variables to store.
+
+example:
+class tree(Tree):
+
+    @task # specifies to load the following task
+    class entry(Sequence):
+
+        # variables in the store
+        finished = var(True)
+
+        # tasks - sequence of tasks to execute
+        save = action('save')
+        @task
+        class finished(Conditional):
+            def check(self):
+                # will refer to the variable 'finished'
+                return self.finished
+
+    def save(self):
+        # save operations
+        pass
+
+"""
 from abc import ABC, abstractmethod, abstractproperty
 from enum import Enum
 import typing
@@ -24,13 +51,6 @@ class Status(Enum):
         return self == Status.FAILURE or self == Status.SUCCESS or self == Status.DONE
 
 
-# TODO: Probably remove.. I don't think I need this now
-def is_task(annotation: typing.Type, val):
-    if annotation is None:
-        return False
-    return isinstance(val, TaskLoader)
-
-
 def vals(cls):
 
     try:
@@ -42,10 +62,7 @@ def vals(cls):
     for var in [x for x in d.keys() if not x.startswith('__')]:
         annotation = annotations.get(var, None)
         val = getattr(cls, var)
-        is_task_ = is_task(annotation, val)
-        if is_task_:
-            yield var, annotation, val, True
-        yield var, annotation, val, False
+        yield var, annotation, val
 
 
 @singledispatch
@@ -80,9 +97,10 @@ class TypeFilter(ArgFilter):
 
 
 class ClassArgFilter(object):
+    """Use to extract args from class members
+    """
 
     def __init__(self, filters: typing.List[ArgFilter]):
-        
         self._filters = filters
 
     def _run_filters(self, name, type_, value):
@@ -94,14 +112,18 @@ class ClassArgFilter(object):
         return False
 
     def filter(self, cls):
+        """Run the arg filter
+        """
         result_kwargs = {}
-        for (name, type_, value, is_task) in vals(cls):
+        for (name, type_, value) in vals(cls):
             if self._run_filters(name, type_, value):
                 result_kwargs[name] = value
         return result_kwargs
 
 
 class VarStorer(object):
+    """Used to specify which variables are stored
+    """
 
     def __init__(self, val):
 
@@ -130,10 +152,10 @@ class VarStorer(object):
         self._val = val
         return self
 
-# TODO: Error handling if passing a ref to a regular storage
-
 
 def var(val=UNDEFINED):    
+    """Convenience function to create a VarStorer
+    """
     return VarStorer(Var(val))
 
 
@@ -171,6 +193,14 @@ class TaskMeta(type):
 
 
 class Task(object, metaclass=TaskMeta):
+    """The base class for a Task node
+
+    A task node has a 'store' and a 'reference' object which may 
+    be None.
+
+    Attributes in the 'store' can be accessed through the attribute
+    operator.
+    """
 
     def __init__(self, name: str=''):
         self._name = name
@@ -215,11 +245,9 @@ class Task(object, metaclass=TaskMeta):
 Task.__call__ = Task.tick
 
 
-def _func():
-    pass
-
-
 class AtomicMeta(TaskMeta):
+    """MetaClass for an atomic Task
+    """
 
     def __call__(cls, *args, **kw):
 
@@ -232,22 +260,26 @@ class AtomicMeta(TaskMeta):
     
 
 class Atomic(Task, metaclass=AtomicMeta):
+    """Base class for an Atomic Class
+    """
     
     def __pre_init__(self, store: Storage, reference):
         super().__pre_init__(store, reference)
 
 
 class Planner(ABC):
-    
-    def __init__(self):
-        pass
+    """Chooses the order which to execute the subtasks of a composite task
+    """
 
+    @abstractmethod
     def adv(self):
         pass
 
+    @abstractmethod
     def end(self):
         pass
     
+    @abstractmethod
     def reset(self):
         pass
 
@@ -257,6 +289,8 @@ class Planner(ABC):
 
 
 class LinearPlanner(object):
+    """Planner that executes sequentially
+    """
 
     def __init__(self, items: typing.List[Task]):
         self._items = items
@@ -294,6 +328,9 @@ class LinearPlanner(object):
 
 
 def iterate_planner(planner: Planner) -> Iterator[Task]:
+    """
+    Convenience function to iterate over a planner
+    """
 
     planner.reset()
     
@@ -303,6 +340,9 @@ def iterate_planner(planner: Planner) -> Iterator[Task]:
 
 
 def shuffle(linear: LinearPlanner):
+    """Decorator for a linear planner that will shuffle the order
+    in which tasks get executed
+    """
 
     old_reset = linear.reset
     def shuffle(items):
@@ -343,6 +383,8 @@ class CompositeMeta(TaskMeta):
 
 
 class Composite(Task, metaclass=CompositeMeta):
+    """Task composed of subtasks
+    """
 
     def __init__(
         self, name: str='', planner: Planner=None
@@ -356,14 +398,17 @@ class Composite(Task, metaclass=CompositeMeta):
 
     @property
     def n(self):
+        """The number of subtasks"""
         return len(self._tasks)
     
     @property
     def tasks(self):
-        return list(**self._tasks)
+        """The subtasks"""
+        return [*self._tasks]
 
     @abstractmethod
     def subtick(self) -> Status:
+        """Tick each subtask. Implement when implementing a new Composite task"""
         raise NotImplementedError
 
     @property
@@ -371,6 +416,7 @@ class Composite(Task, metaclass=CompositeMeta):
         return self._cur_status
 
     def tick(self):
+        
         if self._cur_status.done:
             return Status.DONE
 
@@ -431,6 +477,9 @@ class TreeMeta(TaskMeta):
 
 
 class Tree(Task, metaclass=TreeMeta):
+    """The base behavior tree task. Use the behavior tree like a regular class
+    The reference object for subtasks will refer to the 'tree' object
+    """
 
     def __pre_init__(self, entry: Task, store: Storage, reference):
         super().__pre_init__(store, reference)
@@ -441,6 +490,7 @@ class Tree(Task, metaclass=TreeMeta):
 
 
 class Action(Atomic):
+    """Use to execute an action. Implement the 'act' method for subclasses"""
 
     @abstractmethod
     def act(self):
@@ -454,6 +504,7 @@ class Action(Atomic):
 
 
 class Conditional(Atomic):
+    """Use to check a condition. Implement the 'check' method for subclasses"""
 
     @abstractmethod
     def check(self) -> bool:
@@ -466,21 +517,32 @@ class Conditional(Atomic):
         return self._cur_status
 
 
-class DecoratorLoader(object):
+class DecoratorLoader(ABC):
+    """Use to check a condition. Implement the 'check' method for subclasses"""
 
+    @abstractmethod
     def __call__(self, loader):
+        """Concatenate two decorator loaders or decorate a task loader"""
         pass
 
+    @abstractmethod
     def __lshift__(self, other):
+        """Concatenate two decorator loaders"""
         pass
 
+    @abstractmethod
     def append(self, other):
+        """Concatenate two decorator loaders"""
         pass
 
+    @abstractmethod
     def prepend(self, other):
+        """Concatenate two decorator loaders"""
         pass
 
+    @abstractmethod
     def decorate(self, item):
+        """Decorate the TaskLoader"""
         pass
 
 
@@ -527,28 +589,29 @@ class Loader(object):
         return self
 
 
+# TODO: Decide how to use the task loader
 class TaskLoader(Loader):
 
     pass
 
-    # def __init__(self, task_cls: typing.Type[Task]=UNDEFINED, args: Args=None, decorators=None):
-    #     super().__init__(task_cls, args, decorators)
-
-    # def __call__(self, cls: typing.Type[Task]):
-    #     self._item_cls = cls
-    #     return self
-
 
 def task(cls: typing.Type[Task]):
+    """Convenience method to create a TaskLoader"""
     return TaskLoader(cls)
 
 
+# TODO: Determine whether this is necessary. Does not look
+# necessary right now
 def task_(cls: typing.Type[Task], *args, **kwargs):
-
+    """Convenience method to create a TaskLoader"""
     return TaskLoader(cls, args=Args(*args, **kwargs))
 
 
 class Sequence(Composite):
+    """
+    Executes the subtasks in sequential order
+    Succeeds when all subtasks have succeeded
+    """
 
     def reset(self):
         super().reset()
@@ -572,6 +635,10 @@ class Sequence(Composite):
 
 
 class Fallback(Composite):
+    """
+    Executes the subtasks in sequential order
+    Succeeds when one subtask has succeeded
+    """
 
     def subtick(self) -> Status:
 
@@ -589,6 +656,11 @@ class Fallback(Composite):
 
 
 class Parallel(Composite):
+    """
+    Executes the subtasks in parallel
+    Succeeds when all subtasks have succeeded
+    Fails when all subtasks have finished and one fails
+    """
 
     def __init__(
         self, name: str='', planner: Planner=None
@@ -624,11 +696,22 @@ class Parallel(Composite):
 
 
 class TickDecorator(object):
+    """
+    Wraps the 'tick' method of a class with anohter function
+
+    When inheriting, implement the decorate_tick method
+    """
 
     def __init__(self, node: typing.Type[Task]=None):
         self._node = node
 
+    @abstractmethod
     def decorate_tick(self, node):
+        """Decorate the tick method of the argument node
+
+        Args:
+            node (Task)
+        """
         raise NotImplementedError
     
     def decorate(self, node: Task):
@@ -636,7 +719,13 @@ class TickDecorator(object):
         return node
 
     def __call__(self, *args, **kwargs):
+        """
+        Instantiate the node class with args, kwargs and
+        then decorate it with the decorate_tick method
 
+        Returns:
+            Decorated node
+        """
         if self._node is None:
             raise AttributeError(f'Member node has not been instantiated')
         
@@ -644,10 +733,18 @@ class TickDecorator(object):
 
 
 class TickDecorator2nd(TickDecorator):
+    """
+    2nd order decorator. Wraps the 'tick' method of a class with another function
 
+    When inheriting, implement the decorate_tick method
+    """
     def __init__(self, *args, **kwargs):
+        """
+        Args:
+            args : The args into the network
+            kwargs: The kwargs
+        """
         super().__init__()
-        
         self._args = args
         self._kwargs = kwargs
 
@@ -656,6 +753,11 @@ class TickDecorator2nd(TickDecorator):
         return node
     
     def __call__(self, node_cls: typing.Type[Task]):
+        """Return a method to instantiate the node passed in
+
+        Args:
+            node_cls (typing.Type[Task]): [description]
+        """
         
         def instantiator(*args, **kwargs):
 
@@ -666,8 +768,15 @@ class TickDecorator2nd(TickDecorator):
 
 
 class TaskDecorator(Task):
+    """A 'task' that decorates another task
+    """
     
     def __init__(self, task: Task):
+        """initializer
+
+        Args:
+            task (Task): Task to decorate
+        """
         super().__init__('')
         self._task = task
     
@@ -684,6 +793,8 @@ class TaskDecorator(Task):
 
 
 class DecoratorSequenceLoader(DecoratorLoader):
+    """A sequence of decorators
+    """
 
     def __init__(self, decorators: typing.List[DecoratorLoader]):
 
@@ -719,7 +830,15 @@ class DecoratorSequenceLoader(DecoratorLoader):
         return [*self._decorators]
     
     @classmethod
-    def from_pair(cls, first, second):
+    def from_pair(cls, first: DecoratorLoader, second: DecoratorLoader):
+        """Create a sequence from two decorators
+        Args:
+            first (DecoratorLoader): The first decorator loader
+            second (DecoratorLoader): The second decorator loader
+
+        Returns:
+            [type]: [description]
+        """
 
         loaders = []
         if isinstance(first, DecoratorSequenceLoader):
@@ -735,6 +854,8 @@ class DecoratorSequenceLoader(DecoratorLoader):
 
 
 class AtomicDecoratorLoader(DecoratorLoader):
+    """A single decorator loader
+    """
 
     @singledispatchmethod
     def __call__(self, loader):
@@ -794,6 +915,8 @@ class TickDecoratorLoader(AtomicDecoratorLoader):
 
 
 class neg(TickDecorator):
+    """Converts the decorated nodes status from SUCCESS to FAILURE and vice versa
+    """
 
     def decorate_tick(self, node):
         
@@ -809,6 +932,8 @@ class neg(TickDecorator):
 
 
 class fail(TickDecorator):
+    """Converts the decorated nodes status to FAILURE
+    """
 
     def decorate_tick(self, node):
         
@@ -820,6 +945,8 @@ class fail(TickDecorator):
 
 
 class succeed(TickDecorator):
+    """Converts the decorated nodes status to SUCCESS
+    """
 
     def decorate_tick(self, node):
         
@@ -831,6 +958,8 @@ class succeed(TickDecorator):
 
 
 class until(TickDecorator):
+    """Repeats the task until the result is SUCCESS
+    """
 
     def decorate_tick(self, node):
         
@@ -846,6 +975,10 @@ class until(TickDecorator):
 
 
 class succeed_on_first(TickDecorator):
+    """
+    ParallelTask decorator. Returns SUCCESS if one of the
+    subtasks returns success
+    """
 
     def decorate_tick(self, node: Parallel):
         
@@ -861,6 +994,10 @@ class succeed_on_first(TickDecorator):
 
 
 class fail_on_first(TickDecorator):
+    """
+    ParallelTask decorator. Returns FAILURE if one of the
+    subtasks returns FAILURE
+    """
 
     def decorate_tick(self, node: Parallel):
         
@@ -878,6 +1015,8 @@ STORE_REF = object()
 
 
 class RefMixin(object):
+    """Mixin for 'Reference' tasks. 'Reference' tasks call the 'Reference' object
+    """
 
     @classmethod
     def _process_ref_arg(cls, arg, store):
@@ -909,6 +1048,8 @@ class RefMixin(object):
 
 
 class ActionRef(Action, RefMixin):
+    """Task that executes an action on the reference object
+    """
     
     def __init__(self, name: str, action: str, *args, **kwargs):
         super().__init__(name)
@@ -924,6 +1065,8 @@ class ActionRef(Action, RefMixin):
 
 
 class ConditionalVarRef(Conditional, RefMixin):
+    """Task that retrieves a boolean variable
+    """
 
     def __init__(self, name: str, condition: str):
         super().__init__(name)
@@ -938,6 +1081,8 @@ class ConditionalVarRef(Conditional, RefMixin):
 
 
 class ConditionalRef(Conditional, RefMixin):
+    """Task that retrieves a function
+    """
     
     def __init__(self, name: str, condition: str, *args, **kwargs):
         super().__init__(name)
@@ -954,6 +1099,9 @@ class ConditionalRef(Conditional, RefMixin):
 
 
 class TaskRefDecorator(TaskDecorator, RefMixin):
+    """Decorator that uses a reference function. The reference function
+    Must take in a task
+    """
 
     def __init__(self, name: str, decoration: str, args: Args, task: Task):
         super().__init__(name, task)
@@ -982,19 +1130,46 @@ class TaskRefDecoratorLoader(AtomicDecoratorLoader):
         return TaskRefDecorator(self._name, self._decoration, self._args, item)
 
 
-def action(act: str, *args, **kwargs):
+def action(act: str, *args, **kwargs) -> TaskLoader:
+    """Convenience function for creating an ActionRef
+
+    Args:
+        act (str): The name fo the actino function
+
+    Returns:
+        TaskLoader
+    """
     return TaskLoader(ActionRef, Args(action=act, *args, **kwargs))
 
 
-def cond(check: str, *args, **kwargs):
+def cond(check: str, *args, **kwargs) -> TaskLoader:
+    """Convenience function for creating a ConditionalRef
+
+    Args:
+        check (str): The name of the conditional function
+
+    Returns:
+        TaskLoader
+    """
     return TaskLoader(ConditionalRef, Args(condition=check, *args, **kwargs))
 
 
-def condvar(check: str):
+def condvar(check: str) -> TaskLoader:
+    """Convenience function for creating a ConditionalRef
+
+    Args:
+        check (str): The name of the conditional function
+
+    Returns:
+        TaskLoader
+    """
     return TaskLoader(ConditionalVarRef, Args(condition=check))
 
 
 def _issubclassinstance(obj, cls):
+    """Convenience function to check if an object is a class and if
+    so a subclass of cls
+    """
 
     return isinstance(obj, type) and issubclass(obj, cls)
 

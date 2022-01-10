@@ -1,10 +1,15 @@
+"""
+State machine classes to use in conjunction with the Behavior Tree. This
+makes it possible to build more complex state machines, such as
+ones that execute in parallel or ones that are pause the execution of others
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from functools import singledispatch
 import typing
-
-from sango.vars import UNDEFINED, Args, HierarchicalStorage, Ref, Shared, Storage
+from sango.vars import UNDEFINED, Args, HierarchicalStorage, Storage
 from .nodes import ClassArgFilter, Loader, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 
@@ -91,7 +96,13 @@ class StateType(Enum):
 class Discrete(State[V], metaclass=StateMeta):
 
     def __init__(self, status: StateType=StateType.RUNNING, name: str=''):
-        
+        """[summary]
+
+        Args:
+            status (StateType, optional): Whether the state is a running state, final state, etc. 
+            Defaults to StateType.RUNNING.
+            name (str, optional): Name of the state. Defaults to ''.
+        """
         self._name = name
         self._status = status
     
@@ -105,8 +116,8 @@ class Discrete(State[V], metaclass=StateMeta):
         raise NotImplementedError
     
     def enter(self):
+        """Method called when entering the state. By default it does nothing"""
         pass
-        # self._status = StateType.READY
     
     def reset(self):
         self.enter()
@@ -127,12 +138,29 @@ StateVar = typing.Union[State, StateRef]
 
 
 class Emission(Generic[V]):
+    """
+    Emission of a state. An emission consists of the next state and the
+    value emitted
+    """
 
     def __init__(self, next_state: StateVar, value: V=None):
+        """
+        Args:
+            next_state (StateVar): Next state to execute
+            value (V, optional): Value fo the emission. Defaults to None.
+        """
         self._next_state = next_state
         self._value = value
     
     def emit(self, states: typing.Dict[str, State]=None):
+        """Emit the result 
+
+        Args:
+            states (typing.Dict[str, State], optional): States in the parent state machine. Defaults to None.
+
+        Returns:
+            [type]: The next state and the value emitted
+        """
         states = states or {}
 
         if isinstance(self._next_state, StateRef):
@@ -143,15 +171,9 @@ class Emission(Generic[V]):
         return state, self._value
 
 
+# TODO: Decide whether this is needed
 class StateLoader(Loader):
     pass
-
-    # def __init__(self, state_cls: typing.Type[State]=UNDEFINED, args: Args=None, decorators=None):
-    #     super().__init__(state_cls, args, decorators)
-
-    # def __call__(self, state: State):
-    #     self._state = state
-    #     return self
 
 
 class StateMachineMeta(TaskMeta):
@@ -189,8 +211,9 @@ class StateMachine(Task, metaclass=StateMachineMeta):
     def reset(self):
         pass
 
+    @abstractmethod
     def tick(self):
-        pass
+        raise NotImplementedError
 
 
 def decorate(state_loader: StateLoader, decorators):
