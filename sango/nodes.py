@@ -459,39 +459,64 @@ class Conditional(Atomic):
         return self._cur_status
 
 
+class DecoratorLoader(object):
+
+    def __call__(self, loader):
+        pass
+
+    def __lshift__(self, other):
+        pass
+
+    def append(self, other):
+        pass
+
+    def prepend(self, other):
+        pass
+
+    def decorate(self, item):
+        pass
+
+
 class Loader(object):
 
-    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None, decorators=None):
+    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None):
 
         self._cls = cls
         self._args = args or Args()
-        self._decorators: typing.List = decorators or []
+        self.decorator: DecoratorLoader = None
     
     def load(self, storage: Storage, name: str='', reference=None):
         storage = HierarchicalStorage(Storage(), storage)
-        cls = self._cls
-        if cls is UNDEFINED:
+        if self._cls is UNDEFINED:
             raise ValueError(f"Cls to load for {type(self).__name__} has not been defined")
-        for decorator in reversed(self._decorators):
-            cls = decorator(cls)
         
         kwargs = {}
         if not ref_is_external(self._cls):
             kwargs['reference'] = reference
 
-        item = cls(
+        item = self._cls(
             store=storage, name=name, *self._args.args, **self._args.kwargs, **kwargs
         )
+        if self.decorator is not None:
+            item = self.decorator.decorate(item)
         return item
     
-    def add_decorator(self, decorator):
-        self._decorators.append(decorator)
-        
-    def add_decorators(self, decorators):
-        self._decorators.extend(decorators)
+    def add_decorator(self, decorator, prepend=True):
+
+        if self.decorator is None:
+            self.decorator = decorator
+        elif prepend:
+            self.decorator = self.decorator.prepend(decorator)
+        else:
+            self.decorator = self.decorator.append(decorator)
 
     def __call__(self, cls: typing.Type):
         self._cls = cls
+        return self
+
+    def __lshift__(self, decorator: DecoratorLoader):
+
+        self.add_decorator(decorator)
         return self
 
 
@@ -597,11 +622,6 @@ class TickDecorator(object):
 
     def decorate_tick(self, node):
         raise NotImplementedError
-        
-        # def tick(self, *args, **kwargs):
-        #     pass
-
-        # return tick
     
     def decorate(self, node: Task):
         node.tick = wraps(node.tick)(self.decorate_tick(node))
@@ -655,29 +675,6 @@ class TaskDecorator(Task):
         return self.decorate()
 
 
-class DecoratorLoader(object):
-
-    @singledispatchmethod
-    def __call__(self, loader):
-        pass
-
-    @__call__.register
-    def _(self, loader: Loader):
-        pass
-    
-    def __lshift__(self, other):
-        pass
-
-    def append(self, other):
-        pass
-
-    def prepend(self, other):
-        pass
-
-    def decorate(self, item):
-        pass
-
-
 class DecoratorSequenceLoader(DecoratorLoader):
 
     def __init__(self, decorators: typing.List[DecoratorLoader]):
@@ -691,22 +688,27 @@ class DecoratorSequenceLoader(DecoratorLoader):
 
     @__call__.register
     def _(self, loader: Loader):
-        return loader.add_decorators(self._decorators)
+        loader.add_decorator(self)
+        return loader
     
     def __lshift__(self, other):
         return self.prepend(other)
 
     def append(self, other):
-        return DecoratorSequenceLoader(self, other)
+        return DecoratorSequenceLoader.from_pair(self, other)
 
     def prepend(self, other):
-        return DecoratorSequenceLoader(other, self)
+        return DecoratorSequenceLoader.from_pair(other, self)
 
     def decorate(self, item):
         
         for decorator in reversed(self._decorators):
             item = decorator.decorate(item)
         return item
+    
+    @property
+    def decorators(self):
+        return [*self._decorators]
     
     @classmethod
     def from_pair(cls, first, second):
@@ -736,17 +738,17 @@ class AtomicDecoratorLoader(DecoratorLoader):
 
     @__call__.register
     def _(self, loader: Loader):
-        loader.add_decorators(self)
+        loader.add_decorator(self)
         return loader
     
     def __lshift__(self, other):
         return self.prepend(other)
 
     def append(self, other):
-        return DecoratorSequenceLoader(self, other)
+        return DecoratorSequenceLoader.from_pair(self, other)
 
     def prepend(self, other):
-        return DecoratorSequenceLoader(other, self)
+        return DecoratorSequenceLoader.from_pair(other, self)
 
     def decorate(self, item):
         raise NotImplementedError
@@ -759,6 +761,10 @@ class TaskDecoratorLoader(AtomicDecoratorLoader):
         super().__init__()
         self._decorator_cls = decorator_cls
         self._name = name or self._decorator_cls.__name__
+    
+    @property
+    def decorator_cls(self):
+        return self._decorator_cls
 
     def decorate(self, item):
         return self._decorator_cls(self._name, item)
@@ -771,6 +777,10 @@ class TickDecoratorLoader(AtomicDecoratorLoader):
         super().__init__()
         self._decorator = decorator
 
+    @property
+    def tick_decorator(self):
+        return self._decorator
+
     def decorate(self, item):
         return self._decorator.decorate(item)
 
@@ -780,7 +790,7 @@ class neg(TickDecorator):
     def decorate_tick(self, node):
         
         tick = node.tick
-        def _(self, *args, **kwargs):
+        def _(*args, **kwargs):
             status = tick(*args, **kwargs)
             if status == Status.SUCCESS:
                 return Status.FAILURE
@@ -795,7 +805,7 @@ class fail(TickDecorator):
     def decorate_tick(self, node):
         
         tick = node.tick
-        def _(self, *args, **kwargs):
+        def _(*args, **kwargs):
             status = tick(*args, **kwargs)
             return Status.FAILURE
         return _
@@ -806,7 +816,7 @@ class succeed(TickDecorator):
     def decorate_tick(self, node):
         
         tick = node.tick
-        def _(self, *args, **kwargs):
+        def _(*args, **kwargs):
             status = tick(*args, **kwargs)
             return Status.SUCCESS
         return _
@@ -817,7 +827,7 @@ class until(TickDecorator):
     def decorate_tick(self, node):
         
         tick = node.tick
-        def _(self, *args, **kwargs):
+        def _(*args, **kwargs):
             status = tick(*args, **kwargs)
             if status == Status.SUCCESS:
                 return status
@@ -832,7 +842,7 @@ class succeed_on_first(TickDecorator):
     def decorate_tick(self, node: Parallel):
         
         tick = node.tick
-        def _(self, *args, **kwargs):
+        def _( *args, **kwargs):
             status = tick(*args, **kwargs)
             status_total = node.status_total(Status.SUCCESS)
 
@@ -847,7 +857,7 @@ class fail_on_first(TickDecorator):
     def decorate_tick(self, node: Parallel):
         
         tick = node.tick
-        def _(self, *args, **kwargs):
+        def _(*args, **kwargs):
             status = tick(*args, **kwargs)
             status_total = node.status_total(Status.FAILURE)
             if status == Status.RUNNING and status_total > 0:
@@ -1021,14 +1031,14 @@ def loads_(decorator, *args, **kwargs):
     raise ValueError
 
 
-@loads_.register
-def _(decorator: str, *args, **kwargs):
-    return TaskDecoratorLoader('', TaskRefDecorator('', decorator, Args(*args, **kwargs)))
+# @loads_.register
+# def _(decorator: str, *args, **kwargs):
+#     return TaskDecoratorLoader('', TaskRefDecorator('', decorator, Args(*args, **kwargs)))
 
 
-@loads_.register
-def _(decorator: typing.Type, *args, **kwargs):
-    return TaskDecoratorLoader(decorator(*args, **kwargs))
+# @loads_.register
+# def _(decorator: typing.Type, *args, **kwargs):
+#     return TaskDecoratorLoader(decorator(*args, **kwargs))
 
 
 class TaskFunc(object):

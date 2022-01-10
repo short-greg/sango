@@ -2,7 +2,7 @@ from functools import wraps
 import pytest
 
 from sango.vars import Args, Storage, StoreVar
-from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, Tree, TypeFilter, VarStorer, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
+from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, TickDecorator2nd, Tree, TypeFilter, VarStorer, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
 
 class TestStatus:
 
@@ -435,63 +435,71 @@ class TestParallelTask:
         assert status == Status.SUCCESS
 
 
-def iterate_over(iterations: int):
+class iterate_over(TickDecorator2nd):
 
-    n_iterations = iterations
-    def _(node: Task):
+    def __init__(self, iterations: int):
+        super().__init__()
+        self._iterations = iterations
+
+    def decorate_tick(self, node):
         i = 0
-        def tick(node: Task, wrapped_tick):
+
+        tick = node.tick
+        def _(*args, **kwargs):
             nonlocal i
-            status = wrapped_tick()
+            status = tick(*args, **kwargs)
             i += 1
-            if i >= n_iterations:
+            if i >= self._iterations:
                 return Status.SUCCESS
             return Status.FAILURE
-        return TickDecorator(node, tick)
-    return _
+        return _
 
 
 class TestDecoratorLoader:
 
     def test_with_one_decorator_and_loader(self):
 
-        loader = loads(fail) << task_(DummyPositive)
+        loader = task_(DummyPositive) << loads(fail)
         assert isinstance(loader, TaskLoader)
     
     def test_with_two_decorators(self):
 
         loader = loads(fail) << loads(succeed)
-        assert loader.decorators == [fail, succeed]
+        assert isinstance(loader.decorators[0].tick_decorator, succeed)
+        assert isinstance(loader.decorators[1].tick_decorator, fail)
 
     def test_with_two_decorators(self):
 
-        loader = loads(fail) << loads(succeed) << task_(DummyPositive)
-        assert isinstance(loader, TaskLoader)
+        loader = task_(DummyPositive) << loads(fail) << loads(succeed)
+        sequence = loader.decorator
+
+        assert isinstance(sequence.decorators[0].tick_decorator, succeed)
+        assert isinstance(sequence.decorators[1].tick_decorator, fail)
 
     def test_tick_with_two_decorators(self):
 
-        loader = loads(fail) << loads(succeed) << task_(DummyPositive)
-        task = loader.load(Storage(), "dummy")
-        status = task.tick()
-        assert status == Status.FAILURE
-
-    def test_tick_with_two_decorators_is_success(self):
-
-        loader = loads(succeed) << loads(fail) <<  task_(DummyPositive)
+        loader = task_(DummyPositive) << loads(fail) << loads(succeed)
         task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.SUCCESS
 
+    def test_tick_with_two_decorators_is_success(self):
+
+        loader =  task_(DummyPositive) << loads(succeed) << loads(fail)
+        task = loader.load(Storage(), "dummy")
+        status = task.tick()
+        assert status == Status.FAILURE
+
     def test_tick_with_two_decorators_and_second_order_is_success(self):
 
-        loader = loads_(iterate_over, 1) << loads(fail) <<  task_(DummyPositive)
+        loader = task_(DummyPositive)<< loads(fail) <<loads_(iterate_over, 1) 
         task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.SUCCESS
 
     def test_tick_with_two_decorators_and_second_order_is_failure(self):
 
-        loader = loads_(iterate_over, 2) << loads(fail) <<  task_(DummyPositive)
+        loader =task_(DummyPositive) << loads(fail) << loads_(iterate_over, 2)
         task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.FAILURE
