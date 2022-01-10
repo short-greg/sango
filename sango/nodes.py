@@ -660,17 +660,88 @@ def fail_on_first(node: Parallel):
     return TickDecorator(node, tick)
 
 
+# class TickDecorator(object):
+
+#     def __init__(self, node_cls: typing.Type[Task], tick):
+#         self._node_cls = node_cls
+#         self._tick = tick
+    
+#     # do I want to call this "call?"
+#     def __call__(self, *args, **kwargs):
+#         node = self._node_cls(*args, **kwargs)
+#         node.tick = wraps(node.tick)(partial(self._tick, node, node.tick))
+
+#         node.tick = wraps(node.tick)(
+
+#         )
+#         return node
+
+
 class TickDecorator(object):
 
-    def __init__(self, node_cls: typing.Type[Task], tick):
-        self._node_cls = node_cls
-        self._tick = tick
+    def __init__(self, node: typing.Type[Task]=None):
+        self._node = node
+
+    def decorate_tick(self, node):
+        raise NotImplementedError
+        
+        # def tick(self, *args, **kwargs):
+        #     pass
+
+        # return tick
     
-    # do I want to call this "call?"
-    def __call__(self, *args, **kwargs):
-        node = self._node_cls(*args, **kwargs)
-        node.tick = wraps(node.tick)(partial(self._tick, node, node.tick))
+    def decorate(self, node: Task):
+        node.tick = wraps(node.tick)(self.decorate_tick(node))
         return node
+
+    def __call__(self, *args, **kwargs):
+
+        if self._node is None:
+            raise AttributeError(f'Member node has not been instantiated')
+        
+        return self.decorate(self._node(*args, **kwargs))
+
+
+class TickDecorator2nd(TickDecorator):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        
+        self._args = args
+        self._kwargs = kwargs
+
+    def decorate(self, node: Task):
+        node.tick = wraps(node.tick)(self.decorate_tick(node))
+        return node
+    
+    def __call__(self, node_cls: typing.Type[Task]):
+        
+        def instantiator(*args, **kwargs):
+
+            node = node_cls(*args, **kwargs)
+            return self.decorate(node)
+        
+        return instantiator
+
+
+class TaskDecorator(Task):
+    
+    def __init__(self, task: Task):
+
+        # what to set the name to
+        super().__init__('')
+        self._task = task
+    
+    @abstractmethod
+    def decorate(self):
+        raise NotImplementedError
+
+    def tick(self):
+
+        if self._cur_status.done:
+            return Status.DONE
+
+        return self.decorate()
 
 
 class DecoratorLoader(object):
@@ -742,80 +813,55 @@ class DecoratorSequenceLoader(DecoratorLoader):
         return DecoratorSequenceLoader(loaders)
 
 
-class TaskDecorator(Task):
-    
-    def __init__(self, name: str, task: Task):
+class AtomicDecoratorLoader(DecoratorLoader):
 
-        super()._init__(name)
-        self._task = task
+    @singledispatchmethod
+    def __call__(self, loader):
+        raise f'__call__ not defined for type {type(loader)}'
+
+    @__call__.register
+    def _(self, loader: DecoratorLoader):
+        return self.prepend(loader)
+
+    @__call__.register
+    def _(self, loader: Loader):
+        loader.add_decorators(self)
+        return loader
     
-    @abstractmethod
-    def decorate(self):
+    def __lshift__(self, other):
+        return self.prepend(other)
+
+    def append(self, other):
+        return DecoratorSequenceLoader(self, other)
+
+    def prepend(self, other):
+        return DecoratorSequenceLoader(other, self)
+
+    def decorate(self, item):
         raise NotImplementedError
 
-    def tick(self):
 
-        if self._cur_status.done:
-            return Status.DONE
+class TaskDecoratorLoader(AtomicDecoratorLoader):
 
-        return self.decorate()
+    def __init__(self, decorator_cls: typing.Type[TaskDecorator], name: str=None):
+
+        super().__init__()
+        self._decorator_cls = decorator_cls
+        self._name = name or self._decorator_cls.__name__
+
+    def decorate(self, item):
+        return self._decorator_cls(self._name, item)
 
 
-class TaskDecoratorLoader(DecoratorLoader):
+class TickDecoratorLoader(AtomicDecoratorLoader):
 
-    def __init__(self, decorator: TaskDecorator):
+    def __init__(self, decorator: TickDecorator):
 
         super().__init__()
         self._decorator = decorator
 
-    @singledispatchmethod
-    def __call__(self, loader):
-        return self.prepend(loader)
-
-    @__call__.register
-    def _(self, loader: Loader):
-        return loader.add_decorators(self)
-    
-    def __lshift__(self, other):
-        return self.prepend(other)
-
-    def append(self, other):
-        return DecoratorSequenceLoader(self, other)
-
-    def prepend(self, other):
-        return DecoratorSequenceLoader(other, self)
-
     def decorate(self, item):
-        return self._decorator(item)
-
-
-class TickDecoratorLoader(DecoratorLoader):
-
-    def __init__(self, decorator: TaskDecorator):
-
-        super().__init__()
-        self._decorator = decorator
-
-    @singledispatchmethod
-    def __call__(self, loader):
-        return self.prepend(loader)
-
-    @__call__.register
-    def _(self, loader: Loader):
-        return loader.add_decorators(self)
-    
-    def __lshift__(self, other):
-        return self.prepend(other)
-
-    def append(self, other):
-        return DecoratorSequenceLoader(self, other)
-
-    def prepend(self, other):
-        return DecoratorSequenceLoader(other, self)
-
-    def decorate(self, item):
-        return self._decorator(item)
-
+        return self._decorator.decorate(item)
 
 
 STORE_REF = object()
@@ -894,7 +940,6 @@ class ConditionalRef(Conditional, RefMixin):
 
     def check(self):
         return self._execute_ref(self._reference, self._condition_str, self._args, self._store)
-# TODO: FINISH!!!
 
 
 class TaskRefDecorator(TaskDecorator, RefMixin):
@@ -913,6 +958,19 @@ class TaskRefDecorator(TaskDecorator, RefMixin):
         return self._execute_ref(self._reference, self._decoration_str, self._args, self._store)
 
 
+class TaskRefDecoratorLoader(AtomicDecoratorLoader):
+
+    def __init__(self, decoration: str, args: Args, name: str=None):
+
+        super().__init__()
+        self._decoration = decoration
+        self._name = name or decoration
+        self._args = args
+
+    def decorate(self, item):
+        return TaskRefDecorator(self._name, self._decoration, self._args, item)
+
+
 def action(act: str, *args, **kwargs):
     return TaskLoader(ActionRef, Args(act, *args, **kwargs))
 
@@ -925,8 +983,13 @@ def condvar(check: str):
     return TaskLoader(ConditionalVarRef, Args(check))
 
 
+def _issubclassinstance(obj, cls):
+
+    return isinstance(obj, type) and issubclass(obj, cls)
+
+
 @singledispatch
-def loads(decorator):
+def loads(decorator, name: str=None):
     """Loads a first order decorator
 
     Args:
@@ -935,19 +998,19 @@ def loads(decorator):
     Returns:
         DecoratorLoader
     """
-    return DecoratorLoader(decorator)
 
-@loads.register
-def _(decorator: type):
-    if issubclass(decorator, TickDecorator):
-        pass
+    if _issubclassinstance(decorator, TaskDecorator):
+        return TaskDecoratorLoader(decorator, name)
 
+    elif _issubclassinstance(decorator, TickDecorator):
+        return TickDecoratorLoader(decorator())
 
-@loads.register
-def _(decorator: TaskDecorator):
-    pass
+    elif isinstance(decorator, TickDecorator):
+        return TickDecoratorLoader(decorator)
 
+    raise ValueError
 
+@singledispatch
 def loads_(decorator, *args, **kwargs):
     """Loads a decorator that takes arguments (2nd order decorator)
 
@@ -957,22 +1020,61 @@ def loads_(decorator, *args, **kwargs):
     Returns:
         DecoratorLoader
     """
-    return DecoratorLoader(decorator(*args, **kwargs))
+    if isinstance(decorator, str):
+        return TaskRefDecoratorLoader(decorator, Args(*args, **kwargs))
+
+    elif _issubclassinstance(decorator, TickDecorator2nd):
+        return TickDecoratorLoader(decorator(*args, **kwargs))
+
+    raise ValueError
 
 
-
-# TODO: Complete the following
-
-class TaskFunc:
-    pass
+@loads_.register
+def _(decorator: str, *args, **kwargs):
+    return TaskDecoratorLoader('', TaskRefDecorator('', decorator, Args(*args, **kwargs)))
 
 
-def func():
-    pass
+@loads_.register
+def _(decorator: typing.Type, *args, **kwargs):
+    return TaskDecoratorLoader(decorator(*args, **kwargs))
 
 
-def func_():
-    pass
+class TaskFunc(object):
+    
+    def __init__(self, task_cls: typing.Type, func_vars: typing.List[str], init_vars: typing.List[str]):
+        super().__init__()
+        
+        self._task_cls = task_cls
+        self._func_vars = func_vars
+        self._init_vars = init_vars
+        self._task: Task = None
+    
+    def load(self, *args, **kwargs):
+
+        for a, _a in zip(self._init_vars, args):
+            kwargs[a] = _a
+
+        self._task = self._task_cls(**kwargs)
+    
+    def __call__(self, *args, **kwargs):
+        
+        for a, _a in zip(self._init_vars, args):
+            kwargs[a] = _a
+        
+        # TODO: Class would need to override the 
+        # tick function and provide optional args.. 
+        # I think this is the best approach
+        self._task.tick(**kwargs)
+
+
+def func(func_vars: typing.List[str], init_vars: typing.List[str]):
+    
+    def _(task_cls: typing.Type[Task]):
+        return TaskFunc(task_cls, func_vars, init_vars)
+
+
+def func_(task_cls: typing.Type[Task], func_vars: typing.List[str], init_vars: typing.List[str]):
+    return TaskFunc(task_cls, func_vars, init_vars)
 
 
 # def decorate(loader: Loader, decorators=None):
