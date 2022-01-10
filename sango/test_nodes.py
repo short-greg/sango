@@ -1,8 +1,9 @@
 from functools import wraps
 import pytest
 
-from sango.vars import Args, Storage, StoreVar
-from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, TickDecorator2nd, Tree, TypeFilter, VarStorer, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
+from sango.vars import Args, Storage
+from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, TickDecorator2nd, Tree, TypeFilter, VarStorer, action, cond, condvar, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
+
 
 class TestStatus:
 
@@ -503,3 +504,52 @@ class TestDecoratorLoader:
         task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.FAILURE
+
+
+class TestTreeReference:
+
+
+
+    def test_trial_tree_x(self):
+
+        class TrialTree(Tree):
+
+            @task
+            class entry(Sequence):
+                x = action("x")
+
+
+            def x(self):
+                return Status.SUCCESS
+            
+        tree = TrialTree()
+        assert tree.tick() == Status.SUCCESS
+
+    def test_trial_tree_with_condition(self):
+        
+        class TrialTree(Tree):
+
+            @task
+            class entry(Sequence):
+                x = cond("x")
+
+            def x(self):
+                return True
+            
+        tree = TrialTree()
+        assert tree.tick() == Status.SUCCESS   
+
+    def test_trial_tree_with_condvar(self):
+        
+        class TrialTree(Tree):
+
+            def __init__(self, name: str=''):
+                super().__init__(name)
+                self.x = True
+
+            @task
+            class entry(Sequence):
+                x = condvar("x")
+            
+        tree = TrialTree()
+        assert tree.tick() == Status.SUCCESS   

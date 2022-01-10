@@ -139,8 +139,7 @@ def var(val=UNDEFINED):
 
 def ref_is_external(task_cls, default=True):
     
-    if not isinstance(task_cls, Type): return True
-    if not issubclass(task_cls, Tree): return True
+    if _issubclassinstance(task_cls, Tree): return False
 
     return getattr(task_cls, '__external_ref__', default)
 
@@ -322,20 +321,22 @@ def shuffle(linear: LinearPlanner):
 
 class CompositeMeta(TaskMeta):
 
-    def _load_tasks(cls, store, kw):
+    def _load_tasks(cls, store, kw, reference):
         tasks = []
         for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
+            loader: Loader = loader
             if name in kw:
                 loader(kw[name])
                 del kw[name]
-            tasks.append(loader.load(store, name))
+            tasks.append(loader.load(store, name, reference))
         return tasks
 
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
-        tasks = cls._load_tasks(store, kw)
         reference = cls._get_reference(kw)
+        print("Reference: ", reference)
+        tasks = cls._load_tasks(store, kw, reference)
         cls.__pre_init__(self, tasks, store, reference)
         cls.__init__(self, *args, **kw)
         return self
@@ -385,11 +386,12 @@ class Composite(Task, metaclass=CompositeMeta):
 
 class TreeMeta(TaskMeta):
 
-    def _load_entry(cls, store, reference, kw):
+    def _load_entry(cls, store, kw, reference):
         entry = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)['entry']
         if entry in kw:
             entry(kw['entry'])
             del kw['entry']
+        
         entry = entry.load(store, 'entry', reference)
         return entry
     
@@ -417,7 +419,7 @@ class TreeMeta(TaskMeta):
         store = cls._update_var_stores(kw)
 
         reference = cls._get_reference(self, kw, False)
-        entry = cls._load_entry(store, reference, kw)
+        entry = cls._load_entry(store, kw, reference)
         cls.__pre_init__(self, entry, store, reference)
         cls.__init__(self, *args, **kw)
         return self
@@ -491,7 +493,9 @@ class Loader(object):
             raise ValueError(f"Cls to load for {type(self).__name__} has not been defined")
         
         kwargs = {}
-        if not ref_is_external(self._cls):
+        if reference is not None and not isinstance(self._cls, Tree):
+
+        # if not ref_is_external(self._cls):
             kwargs['reference'] = reference
 
         item = self._cls(
@@ -537,6 +541,7 @@ def task(cls: typing.Type[Task]):
 
 
 def task_(cls: typing.Type[Task], *args, **kwargs):
+
     return TaskLoader(cls, args=Args(*args, **kwargs))
 
 
@@ -902,9 +907,9 @@ class RefMixin(object):
 
 class ActionRef(Action, RefMixin):
     
-    def __init__(self, name: str, action: str, args: Args):
+    def __init__(self, name: str, action: str, *args, **kwargs):
         super().__init__(name)
-
+        args = Args(*args, **kwargs)
         if self._reference is None:
             raise ValueError('Reference object must be defined to create an ActionReference')
 
@@ -931,9 +936,10 @@ class ConditionalVarRef(Conditional, RefMixin):
 
 class ConditionalRef(Conditional, RefMixin):
     
-    def __init__(self, name: str, condition: str, args: Args):
+    def __init__(self, name: str, condition: str, *args, **kwargs):
         super().__init__(name)
 
+        args = Args(*args, **kwargs)
         if self._reference is None:
             raise ValueError('Reference object must be defined to create a ConditionalReference')
         
@@ -974,15 +980,15 @@ class TaskRefDecoratorLoader(AtomicDecoratorLoader):
 
 
 def action(act: str, *args, **kwargs):
-    return TaskLoader(ActionRef, Args(act, *args, **kwargs))
+    return TaskLoader(ActionRef, Args(action=act, *args, **kwargs))
 
 
 def cond(check: str, *args, **kwargs):
-    return TaskLoader(ConditionalRef, Args(check, *args, **kwargs))
+    return TaskLoader(ConditionalRef, Args(condition=check, *args, **kwargs))
 
 
 def condvar(check: str):
-    return TaskLoader(ConditionalVarRef, Args(check))
+    return TaskLoader(ConditionalVarRef, Args(condition=check))
 
 
 def _issubclassinstance(obj, cls):
@@ -1012,6 +1018,7 @@ def loads(decorator, name: str=None):
 
     raise ValueError
 
+
 @singledispatch
 def loads_(decorator, *args, **kwargs):
     """Loads a decorator that takes arguments (2nd order decorator)
@@ -1029,16 +1036,6 @@ def loads_(decorator, *args, **kwargs):
         return TickDecoratorLoader(decorator(*args, **kwargs))
 
     raise ValueError
-
-
-# @loads_.register
-# def _(decorator: str, *args, **kwargs):
-#     return TaskDecoratorLoader('', TaskRefDecorator('', decorator, Args(*args, **kwargs)))
-
-
-# @loads_.register
-# def _(decorator: typing.Type, *args, **kwargs):
-#     return TaskDecoratorLoader(decorator(*args, **kwargs))
 
 
 class TaskFunc(object):
@@ -1075,7 +1072,6 @@ def func(func_vars: typing.List[str], init_vars: typing.List[str]):
     
     def _(task_cls: typing.Type[Task]):
         return TaskFunc(task_cls, func_vars, init_vars)
-
 
 def func_(task_cls: typing.Type[Task], func_vars: typing.List[str], init_vars: typing.List[str]):
     return TaskFunc(task_cls, func_vars, init_vars)
