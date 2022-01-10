@@ -387,7 +387,11 @@ class Composite(Task, metaclass=CompositeMeta):
 class TreeMeta(TaskMeta):
 
     def _load_entry(cls, store, kw, reference):
-        entry = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)['entry']
+
+        tasks = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)
+        if 'entry' not in tasks:
+            raise AttributeError(f'Task entry not defined for tree')
+        entry = tasks['entry']
         if entry in kw:
             entry(kw['entry'])
             del kw['entry']
@@ -421,6 +425,7 @@ class TreeMeta(TaskMeta):
         reference = cls._get_reference(self, kw, False)
         entry = cls._load_entry(store, kw, reference)
         cls.__pre_init__(self, entry, store, reference)
+        print(args, kw)
         cls.__init__(self, *args, **kw)
         return self
 
@@ -494,8 +499,6 @@ class Loader(object):
         
         kwargs = {}
         if reference is not None and not isinstance(self._cls, Tree):
-
-        # if not ref_is_external(self._cls):
             kwargs['reference'] = reference
 
         item = self._cls(

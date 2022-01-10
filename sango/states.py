@@ -14,7 +14,8 @@ class StateMeta(TaskMeta):
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
-        cls.__pre_init__(self, store)
+        reference = cls._get_reference(kw)
+        cls.__pre_init__(self, store, reference)
         cls.__init__(self, *args, **kw)
         return self
 
@@ -29,9 +30,9 @@ class State(Generic[V], metaclass=StateMeta):
     def __init__(self, name: str=''):
         self._name = name
         
-    def __pre_init__(self, store: Storage):
+    def __pre_init__(self, store: Storage, reference):
         self._store = store
-
+        self._reference = reference
 
     def __getattribute__(self, key: str) -> Any:
         try:
@@ -90,11 +91,13 @@ class StateType(Enum):
 class Discrete(State[V], metaclass=StateMeta):
 
     def __init__(self, status: StateType=StateType.RUNNING, name: str=''):
+        
         self._name = name
         self._status = status
     
     @property
     def status(self) -> StateType:
+        print(self._name, self._status)
         return self._status
 
     @abstractmethod
@@ -102,7 +105,8 @@ class Discrete(State[V], metaclass=StateMeta):
         raise NotImplementedError
     
     def enter(self):
-        self._status = StateType.READY
+        pass
+        # self._status = StateType.READY
     
     def reset(self):
         self.enter()
@@ -152,33 +156,35 @@ class StateLoader(Loader):
 
 class StateMachineMeta(TaskMeta):
 
-    def _load_states(cls, store, kw):
+    def _load_states(cls, store, kw, reference):
         states = {}
         for name, loader in ClassArgFilter([TypeFilter(StateLoader)]).filter(cls).items():
             if name in kw:
                 loader(kw[name])
                 del kw[name]
-            states[name] = loader.load(store, name)
+            states[name] = loader.load(store, name, reference)
         return states
 
     def __call__(cls, *args, **kw):
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
-        states = cls._load_states(store, kw)
+        reference = cls._get_reference(kw)
+        states = cls._load_states(store, kw, reference)
         start = states['start']
         del states['start']
-        cls.__pre_init__(self, start, states, store)
+        cls.__pre_init__(self, start, states, store, reference)
         cls.__init__(self, *args, **kw)
         return self
 
 
 class StateMachine(Task, metaclass=StateMachineMeta):
     
-    def __pre_init__(self, start: State, states: typing.Dict[str, State], store: Storage):
+    def __pre_init__(self, start: State, states: typing.Dict[str, State], store: Storage, reference):
 
         self._start = start
         self._states = states
         self._store = store
+        self._reference = reference
     
     def reset(self):
         pass
@@ -244,9 +250,9 @@ def state(*args, **kwargs):
 
 class FSM(StateMachine):
 
-    def __pre_init__(self, start: Discrete, states: typing.Dict[str, Discrete], store: Storage):
+    def __pre_init__(self, start: Discrete, states: typing.Dict[str, Discrete], store: Storage, reference):
 
-        super().__pre_init__(start, states, store)
+        super().__pre_init__(start, states, store, reference)
         self._cur_state = self._start
         self._cur_state.reset()
     
@@ -265,10 +271,14 @@ class FSM(StateMachine):
         next_state, value = emission.emit(self._states)
         if next_state.status.final:
             self._cur_state = next_state
-            return self._cur_state.status
+            if self._cur_state.status == StateType.SUCCESS:
+                return Status.SUCCESS
+            elif self._cur_state.status == StateType.FAILURE:
+                return Status.FAILURE
         elif next_state != self._cur_state:
             self._cur_state = next_state
             self._cur_state.reset()
+
         return Status.RUNNING
 
     @property
