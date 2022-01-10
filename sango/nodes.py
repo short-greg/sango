@@ -590,75 +590,6 @@ class Parallel(Composite):
         return Status.SUCCESS if Status.FAILURE not in self._statuses else Status.FAILURE
 
 
-def neg(node: Task):
-
-    def tick(node: Task, wrapped_tick):
-        status = wrapped_tick()
-        if status == Status.SUCCESS:
-            return Status.FAILURE
-        elif status == Status.FAILURE:
-            return Status.SUCCESS
-        return status
-    
-    return TickDecorator(node, tick)
-
-
-def fail(node: Task):
-
-    def tick(node: Task, wrapped_tick):
-        wrapped_tick()
-        return Status.FAILURE
-    
-    return TickDecorator(node, tick)
-
-
-def succeed(node: Task):
-
-    def tick(node: Task, wrapped_tick):
-        wrapped_tick()
-        return Status.SUCCESS
-    
-    return TickDecorator(node, tick)
-
-
-def until(node: Task):
-
-    def tick(node: Task, wrapped_tick):
-        status = wrapped_tick()
-        if status == Status.SUCCESS:
-            return status
-        elif status == Status.FAILURE:
-            node.reset()
-        return Status.RUNNING
-    
-    return TickDecorator(node, tick)
-
-
-def succeed_on_first(node: Parallel):
-
-    def tick(node: Parallel, wrapped_tick):
-        status = wrapped_tick()
-
-        status_total = node.status_total(Status.SUCCESS)
-
-        if status == Status.RUNNING and status_total > 0:
-            return Status.SUCCESS
-        return status
-    
-    return TickDecorator(node, tick)
-
-
-def fail_on_first(node: Parallel):
-
-    def tick(node: Parallel, wrapped_tick):
-        status = wrapped_tick()
-        status_total = node.status_total(Status.FAILURE)
-        if status == Status.RUNNING and status_total > 0:
-            return Status.FAILURE
-        return status
-    
-    return TickDecorator(node, tick)
-
 
 # class TickDecorator(object):
 
@@ -862,6 +793,154 @@ class TickDecoratorLoader(AtomicDecoratorLoader):
 
     def decorate(self, item):
         return self._decorator.decorate(item)
+
+
+# def neg(node: Task):
+
+#     def tick(node: Task, wrapped_tick):
+#         status = wrapped_tick()
+#         if status == Status.SUCCESS:
+#             return Status.FAILURE
+#         elif status == Status.FAILURE:
+#             return Status.SUCCESS
+#         return status
+    
+#     return TickDecorator(node, tick)
+
+
+class neg(TickDecorator):
+
+    def decorate_tick(self, node):
+        
+        tick = node.tick
+        def _(self, *args, **kwargs):
+            status = tick(*args, **kwargs)
+            if status == Status.SUCCESS:
+                return Status.FAILURE
+            elif status == Status.FAILURE:
+                return Status.SUCCESS
+            return status
+        return _
+
+
+class fail(TickDecorator):
+
+    def decorate_tick(self, node):
+        
+        tick = node.tick
+        def _(self, *args, **kwargs):
+            status = tick(*args, **kwargs)
+            return Status.FAILURE
+        return _
+
+
+# def fail(node: Task):
+
+#     def tick(node: Task, wrapped_tick):
+#         wrapped_tick()
+#         return Status.FAILURE
+    
+#     return TickDecorator(node, tick)
+
+class succeed(TickDecorator):
+
+    def decorate_tick(self, node):
+        
+        tick = node.tick
+        def _(self, *args, **kwargs):
+            status = tick(*args, **kwargs)
+            return Status.SUCCESS
+        return _
+
+
+# def succeed(node: Task):
+
+#     def tick(node: Task, wrapped_tick):
+#         wrapped_tick()
+#         return Status.SUCCESS
+    
+#     return TickDecorator(node, tick)
+
+class until(TickDecorator):
+
+    def decorate_tick(self, node):
+        
+        tick = node.tick
+        def _(self, *args, **kwargs):
+            status = tick(*args, **kwargs)
+            if status == Status.SUCCESS:
+                return status
+            elif status == Status.FAILURE:
+                node.reset()
+            return Status.RUNNING
+        return _
+
+
+# def until(node: Task):
+
+#     def tick(node: Task, wrapped_tick):
+#         status = wrapped_tick()
+#         if status == Status.SUCCESS:
+#             return status
+#         elif status == Status.FAILURE:
+#             node.reset()
+#         return Status.RUNNING
+    
+#     return TickDecorator(node, tick)
+
+class succeed_on_first(TickDecorator):
+
+    def decorate_tick(self, node: Parallel):
+        
+        tick = node.tick
+        def _(self, *args, **kwargs):
+            status = tick(*args, **kwargs)
+            status_total = node.status_total(Status.SUCCESS)
+
+            if status == Status.RUNNING and status_total > 0:
+                return Status.SUCCESS
+            return status
+        return _
+
+
+# def succeed_on_first(node: Parallel):
+
+#     def tick(node: Parallel, wrapped_tick):
+#         status = wrapped_tick()
+
+#         status_total = node.status_total(Status.SUCCESS)
+
+#         if status == Status.RUNNING and status_total > 0:
+#             return Status.SUCCESS
+#         return status
+    
+#     return TickDecorator(node, tick)
+
+
+# def fail_on_first(node: Parallel):
+
+#     def tick(node: Parallel, wrapped_tick):
+#         status = wrapped_tick()
+#         status_total = node.status_total(Status.FAILURE)
+#         if status == Status.RUNNING and status_total > 0:
+#             return Status.FAILURE
+#         return status
+    
+#     return TickDecorator(node, tick)
+
+
+class fail_on_first(TickDecorator):
+
+    def decorate_tick(self, node: Parallel):
+        
+        tick = node.tick
+        def _(self, *args, **kwargs):
+            status = tick(*args, **kwargs)
+            status_total = node.status_total(Status.FAILURE)
+            if status == Status.RUNNING and status_total > 0:
+                return Status.FAILURE
+            return status
+        return _
 
 
 STORE_REF = object()
