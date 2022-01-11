@@ -885,9 +885,10 @@ class AtomicDecoratorLoader(DecoratorLoader):
 
 class TaskDecoratorLoader(AtomicDecoratorLoader):
 
-    def __init__(self, decorator_cls: typing.Type[TaskDecorator], name: str=None):
+    def __init__(self, decorator_cls: typing.Type[TaskDecorator], args: Args=None, name: str=None):
 
         super().__init__()
+        self._args = args or Args()
         self._decorator_cls = decorator_cls
         self._name = name or self._decorator_cls.__name__
     
@@ -896,7 +897,20 @@ class TaskDecoratorLoader(AtomicDecoratorLoader):
         return self._decorator_cls
 
     def decorate(self, item):
-        return self._decorator_cls(self._name, item)
+        return self._decorator_cls(self._name, item, *self._args.args, **self._args.kwargs)
+
+@singledispatch
+def decorate(decorator: typing.Type[TaskDecorator], *args, **kwargs):
+
+    return TaskDecoratorLoader(
+        decorator, Args(*args, **kwargs)
+    )
+
+@decorate.register
+def _(decorator: str, *args, **kwargs):
+    return TaskRefDecoratorLoader(
+        decorator, Args(*args, **kwargs)
+    )
 
 
 class TickDecoratorLoader(AtomicDecoratorLoader):
