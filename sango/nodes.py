@@ -30,8 +30,7 @@ from enum import Enum
 import typing
 from functools import partial, singledispatch, singledispatchmethod
 from typing import Any, Iterator, Type
-from sango.vars import UNDEFINED, HierarchicalStorage, Storage
-from .vars import STORE_REF, AbstractStorage, Args, HierarchicalStorage, Ref, StoreVar, Var
+from .vars import STORE_REF, Args, HierarchicalStorage, Ref, SingleStorage, StoreVar, Var, UNDEFINED, HierarchicalStorage, Storage
 from .utils import coalesce
 import random
 from functools import wraps
@@ -66,17 +65,17 @@ def vals(cls):
 
 
 @singledispatch
-def _update_var(val, storage: AbstractStorage):
+def _update_var(val, storage: Storage):
     return Var[Any](val)
 
 
 @_update_var.register
-def _(val: Ref, storage: AbstractStorage):
+def _(val: Ref, storage: Storage):
     return val.shared(storage)
 
 
 @_update_var.register
-def _(val: StoreVar, storage: AbstractStorage):
+def _(val: StoreVar, storage: Storage):
     return val
 
 
@@ -175,7 +174,7 @@ class TaskMeta(type):
             store = kw['store']
             del kw['store']
         else:
-            store = HierarchicalStorage(Storage())
+            store = HierarchicalStorage(SingleStorage())
         
         for name, storer in var_stores.items():
             if name in kw:
@@ -471,7 +470,6 @@ class TreeMeta(TaskMeta):
         reference = cls._get_reference(self, kw, False)
         entry = cls._load_entry(store, kw, reference)
         cls.__pre_init__(self, entry, store, reference)
-        print(args, kw)
         cls.__init__(self, *args, **kw)
         return self
 
@@ -555,7 +553,7 @@ class Loader(object):
         self.decorator: DecoratorLoader = None
     
     def load(self, storage: Storage, name: str='', reference=None):
-        storage = HierarchicalStorage(Storage(), storage)
+        storage = HierarchicalStorage(SingleStorage(), storage)
         args = self._args.update_refs(storage)
 
         if self._cls is UNDEFINED:

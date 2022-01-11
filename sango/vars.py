@@ -7,10 +7,7 @@ import typing
 from dataclasses import dataclass
 
 
-class _Undefined:
-    pass
-
-UNDEFINED = _Undefined()
+UNDEFINED = object()
 
 V = TypeVar('V')
 
@@ -93,7 +90,7 @@ class ConstShared(StoreVar):
         return self._var.is_empty()
 
 
-class AbstractStorage(ABC):
+class Storage(ABC):
 
     @abstractmethod
     def __setitem__(self, key, value):
@@ -122,8 +119,11 @@ class AbstractStorage(ABC):
     def contains(self, key: str):
         return key in self._data
 
+    @abstractmethod
+    def get_or_add(self, key, default=None):
+        raise NotImplementedError
 
-class Storage(AbstractStorage):
+class SingleStorage(Storage):
 
     def __init__(self, **kwargs):
         self._data = {}
@@ -163,10 +163,17 @@ class Storage(AbstractStorage):
     def contains(self, key: str):
         return key in self._data
 
+    def get_or_add(self, key, default=None):
+
+        if not self.contains(key):
+            self._data[key] = Var(default)
+        
+        return self.get(key)
+
 Storage.__contains__ = Storage.contains
 
 
-class NullStorage(AbstractStorage):
+class NullStorage(Storage):
 
     def __init__(self):
         self._data = {}
@@ -192,6 +199,8 @@ class NullStorage(AbstractStorage):
     def contains(self, key: str):
         return False
 
+    def get_or_add(self, key, default=None):
+        return default
 
 NullStorage.__contains__ = NullStorage.contains
 
@@ -213,9 +222,9 @@ class Ref(ABC):
 STORE_REF = object()
 
 
-class HierarchicalStorage(AbstractStorage):
+class HierarchicalStorage(Storage):
 
-    def __init__(self, child: AbstractStorage, parent: AbstractStorage=None):
+    def __init__(self, child: Storage, parent: Storage=None):
 
         self._parent = parent or NullStorage()
         self._child = child
@@ -264,7 +273,7 @@ class HierarchicalStorage(AbstractStorage):
             return self._parent[key]
         return default
     
-    def get_or_create(self, key, default=None, recursive=False):
+    def get_or_add(self, key, default=None, recursive=False):
 
         if (
             key not in self._child 
