@@ -31,7 +31,7 @@ import typing
 from functools import partial, singledispatch, singledispatchmethod
 from typing import Any, Iterator, Type
 from sango.vars import UNDEFINED, HierarchicalStorage, Storage
-from .vars import AbstractStorage, Args, HierarchicalStorage, Ref, StoreVar, Var
+from .vars import STORE_REF, AbstractStorage, Args, HierarchicalStorage, Ref, StoreVar, Var
 from .utils import coalesce
 import random
 from functools import wraps
@@ -556,6 +556,8 @@ class Loader(object):
     
     def load(self, storage: Storage, name: str='', reference=None):
         storage = HierarchicalStorage(Storage(), storage)
+        args = self._args.update_refs(storage)
+
         if self._cls is UNDEFINED:
             raise ValueError(f"Cls to load for {type(self).__name__} has not been defined")
         
@@ -564,7 +566,7 @@ class Loader(object):
             kwargs['reference'] = reference
 
         item = self._cls(
-            store=storage, name=name, *self._args.args, **self._args.kwargs, **kwargs
+            store=storage, name=name, *args.args, **args.kwargs, **kwargs
         )
         if self.decorator is not None:
             item = self.decorator.decorate(item)
@@ -1025,9 +1027,6 @@ class fail_on_first(TickDecorator):
         return _
 
 
-STORE_REF = object()
-
-
 class RefMixin(object):
     """Mixin for 'Reference' tasks. 'Reference' tasks call the 'Reference' object
     """
@@ -1067,7 +1066,8 @@ class ActionRef(Action, RefMixin):
     
     def __init__(self, name: str, action: str, *args, **kwargs):
         super().__init__(name)
-        args = Args(*args, **kwargs)
+        args = Args(*args, **kwargs).update_refs(self._store)
+        
         if self._reference is None:
             raise ValueError('Reference object must be defined to create an ActionReference')
 
@@ -1101,7 +1101,7 @@ class ConditionalRef(Conditional, RefMixin):
     def __init__(self, name: str, condition: str, *args, **kwargs):
         super().__init__(name)
 
-        args = Args(*args, **kwargs)
+        args = Args(*args, **kwargs).update_refs(self._store)
         if self._reference is None:
             raise ValueError('Reference object must be defined to create a ConditionalReference')
         

@@ -17,7 +17,7 @@ V = TypeVar('V')
 class StoreVar(Generic[V]):
     
     @abstractmethod
-    def value(self):
+    def val(self):
         raise NotImplementedError
 
 
@@ -25,17 +25,17 @@ T = TypeVar('T')
 
 class Var(StoreVar[T]):
     
-    def __init__(self, value: T):
+    def __init__(self, val: T):
 
-        self._value = value
+        self._val = val
 
     @property
-    def value(self) -> T:
-        return self._value
+    def val(self) -> T:
+        return self._val
 
-    @value.setter
-    def value(self, value):
-        self._value = value
+    @val.setter
+    def val(self, val):
+        self._val = val
 
 
 class Shared(StoreVar):
@@ -45,12 +45,12 @@ class Shared(StoreVar):
         self._var = var
     
     @property
-    def value(self):
-        return self._var.value
+    def val(self):
+        return self._var.val
 
-    @value.setter
-    def value(self, value):
-        self._var.value = value
+    @val.setter
+    def value(self, val):
+        self._var.val = val
 
 
 class AbstractStorage(ABC):
@@ -148,9 +148,6 @@ class NullStorage(AbstractStorage):
 
     def get(self, key, default):
         return default
-    
-    # def update_references(self, parent: AbstractStorage):
-    #     pass
 
     def contains(self, key: str):
         return False
@@ -170,7 +167,7 @@ class Ref(object):
     def name(self):
         return self._var_name
     
-    def value(self):
+    def val(self):
         if self.store is None:
             raise AttributeError("Storage to reference has not been set.")
         return self.store[self._var_name]
@@ -180,12 +177,11 @@ class Ref(object):
         return Shared(storage[self._var_name])
     
     def var(self, storage: Storage) -> Var:
-        return Var(storage[self._var_name].value)
+        return Var(storage[self._var_name].val)
 
 
-# TODO: StoreRef
-# TODO: Can store in parent
-# TODO: Can store in global
+STORE_REF = object()
+
 
 class HierarchicalStorage(AbstractStorage):
 
@@ -237,6 +233,16 @@ class HierarchicalStorage(AbstractStorage):
         elif recursive and key in self._parent:
             return self._parent[key]
         return default
+    
+    def get_or_create(self, key, default=None, recursive=False):
+
+        if (
+            key not in self._child 
+            and (not recursive or not self._parent.contains(key, recursive=True))
+        ):
+            self._child[key] = default
+        
+        return self.get(key, recursive=recursive)
 
     def contains(self, key: str, recursive: bool=False):
         if key in self._child:
@@ -294,3 +300,16 @@ class Args(object):
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
+    
+    def _get(self, a, store):
+        if isinstance(a, Ref):
+            return a.shared(store)
+        if a == STORE_REF:
+            return store
+        return a
+
+    def update_refs(self, store: Storage):
+        args = [self._get(v, store) for v in self.args]
+        kwargs = {k: self._get(v, store) for k, v in self.kwargs.items()}
+
+        return Args(*args, **kwargs)
