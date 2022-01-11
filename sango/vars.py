@@ -20,6 +20,9 @@ class StoreVar(Generic[V]):
     def val(self):
         raise NotImplementedError
 
+    @abstractmethod
+    def is_empty(self):
+        raise NotImplementedError
 
 T = TypeVar('T')
 
@@ -36,11 +39,29 @@ class Var(StoreVar[T]):
     @val.setter
     def val(self, val):
         self._val = val
+    
+    def empty(self):
+        self._val = None
+
+    def is_empty(self):
+        return self._val is None
 
 
-class Shared(StoreVar):
+class Const(StoreVar[T]):
+    
+    def __init__(self, val: T):
+        self._val = val
 
-    def __init__(self, var: Var):
+    @property
+    def val(self) -> T:
+        return self._val
+
+    def is_empty(self):
+        return self._val is None
+
+class Shared(StoreVar[T]):
+
+    def __init__(self, var: Var[T]):
 
         self._var = var
     
@@ -49,8 +70,27 @@ class Shared(StoreVar):
         return self._var.val
 
     @val.setter
-    def value(self, val):
+    def val(self, val) -> T:
         self._var.val = val
+
+    def is_empty(self):
+        return self._var.is_empty()
+
+    def empty(self):
+        return self._var.empty()
+
+
+class ConstShared(StoreVar):
+
+    def __init__(self, var: Var[T]):
+        self._var = var
+    
+    @property
+    def val(self) -> T:
+        return self._var.val
+
+    def is_empty(self):
+        return self._var.is_empty()
 
 
 class AbstractStorage(ABC):
