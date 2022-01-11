@@ -30,11 +30,10 @@ class TestVals:
             # x: float
         
         _iter = vals(T)
-        var, annotation, val, is_task = next(_iter)
+        var, annotation, val = next(_iter)
         assert var == 'x'
         assert annotation is None
         assert val == 2
-        assert is_task is False
             
     def test_gets_value_with_annotation(self):
 
@@ -44,12 +43,11 @@ class TestVals:
             # x: float
         
         _iter = vals(T)
-        var, annotation, val, is_task = next(_iter)
-        var, annotation, val, is_task = next(_iter)
+        var, annotation, val = next(_iter)
+        var, annotation, val = next(_iter)
         assert var == 'x2'
         assert annotation == int
         assert val == 3
-        assert is_task is False
             
     def test_value_with_only_annotation_doesnt_exist(self):
 
@@ -204,7 +202,7 @@ class TestCreateSequenceTask:
             data = var(2)
         
         seq = Pos()
-        assert seq.data.value == 2
+        assert seq.data.val == 2
 
     def test_pos_with_store_and_new_val(self):
 
@@ -213,7 +211,7 @@ class TestCreateSequenceTask:
             data = var(2)
         
         seq = Pos(data=3)
-        assert seq.data.value == 3
+        assert seq.data.val == 3
 
 
 
@@ -508,8 +506,6 @@ class TestDecoratorLoader:
 
 class TestTreeReference:
 
-
-
     def test_trial_tree_x(self):
 
         class TrialTree(Tree):
@@ -517,7 +513,6 @@ class TestTreeReference:
             @task
             class entry(Sequence):
                 x = action("x")
-
 
             def x(self):
                 return Status.SUCCESS

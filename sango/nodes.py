@@ -133,7 +133,7 @@ class VarStorer(object):
             self._val = Var(val)
 
     @property
-    def value(self):
+    def val(self):
         return self._val
 
     @singledispatchmethod
@@ -182,7 +182,7 @@ class TaskMeta(type):
                 storer(kw[name])
                 del kw[name]
             
-            store[name] = storer.value
+            store[name] = storer.val
         return store
 
     def _get_reference(cls, kw):
@@ -1035,7 +1035,7 @@ class RefMixin(object):
     def _process_ref_arg(cls, arg, store):
 
         if isinstance(arg, Ref):
-            return arg.shared(store).value
+            return arg.shared(store).val
 
         elif arg == STORE_REF:
             return store

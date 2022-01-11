@@ -196,29 +196,19 @@ class NullStorage(AbstractStorage):
 NullStorage.__contains__ = NullStorage.contains
 
 
-class Ref(object):
-
-    def __init__(self, var_name: str, store: Storage=None):
-
-        self._var_name = var_name
-        self.store = store
-
-    @property
-    def name(self):
-        return self._var_name
+class Ref(ABC):
     
-    def val(self):
-        if self.store is None:
-            raise AttributeError("Storage to reference has not been set.")
-        return self.store[self._var_name]
+    @abstractmethod
+    def val(self, store: Storage):
+        raise NotImplementedError
 
-    def shared(self, storage: Storage) -> Shared:
-
-        return Shared(storage[self._var_name])
+    @abstractmethod
+    def shared(self, store: Storage) -> Shared:
+        raise NotImplementedError
     
-    def var(self, storage: Storage) -> Var:
-        return Var(storage[self._var_name].val)
-
+    @abstractmethod
+    def var(self, store: Storage) -> Var:
+        raise NotImplementedError
 
 STORE_REF = object()
 
@@ -296,6 +286,52 @@ class HierarchicalStorage(AbstractStorage):
 HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, recursive=False)
 
 
+class VarRef(Ref):
+
+    def __init__(self, var_name: str, store: Storage=None):
+
+        self._var_name = var_name
+        self.store = store
+
+    @property
+    def name(self):
+        return self._var_name
+    
+    def val(self, store: Storage):
+        if store is None:
+            raise AttributeError("Storage to reference has not been set.")
+        return store[self._var_name]
+
+    def shared(self, store: Storage) -> Shared:
+
+        return Shared(store[self._var_name])
+    
+    def val(self, store: Storage) -> Var:
+        return Var(store[self._var_name].val)
+
+
+class ConstRef(Ref):
+
+    def __init__(self, var_name: str):
+
+        self._var_name = var_name
+
+    @property
+    def name(self):
+        return self._var_name
+    
+    def val(self, store: Storage):
+        if store is None:
+            raise AttributeError("Storage to reference has not been set.")
+        return store[self._var_name]
+
+    def shared(self, store: Storage) -> Shared:
+        return ConstShared(store[self._var_name])
+    
+    def val(self, store: Storage) -> Var:
+        return Const(store[self._var_name].val)
+
+
 @dataclass
 class Condition:
     value: str
@@ -308,9 +344,21 @@ class _ref(object):
 
     def __getattr__(self, key):
 
-        return Ref(key)
+        return VarRef(key)
+
+
+class _const_ref(object):
+
+    def __setattr__(self, __name: str, __value) -> None:
+        raise AttributeError('Cannot set {__name} for ref object')
+
+    def __getattr__(self, key):
+
+        return ConstRef(key)
+
 
 ref = _ref()
+cref = _const_ref()
 
 
 class ConditionSet(object):
@@ -341,7 +389,7 @@ class Args(object):
         self.args = args
         self.kwargs = kwargs
     
-    def _get(self, a, store):
+    def _update(self, a, store):
         if isinstance(a, Ref):
             return a.shared(store)
         if a == STORE_REF:
@@ -349,7 +397,7 @@ class Args(object):
         return a
 
     def update_refs(self, store: Storage):
-        args = [self._get(v, store) for v in self.args]
-        kwargs = {k: self._get(v, store) for k, v in self.kwargs.items()}
+        args = [self._update(v, store) for v in self.args]
+        kwargs = {k: self._update(v, store) for k, v in self.kwargs.items()}
 
         return Args(*args, **kwargs)
