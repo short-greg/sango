@@ -26,8 +26,6 @@ class TestVals:
 
         class T:
             x = 2
-            # x: int = 3
-            # x: float
         
         _iter = vals(T)
         var, annotation, val = next(_iter)

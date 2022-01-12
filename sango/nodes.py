@@ -374,7 +374,6 @@ class CompositeMeta(TaskMeta):
         self = cls.__new__(cls, *args, **kw)
         store = cls._update_var_stores(kw)
         reference = cls._get_reference(kw)
-        print("Reference: ", reference)
         tasks = cls._load_tasks(store, kw, reference)
         cls.__pre_init__(self, tasks, store, reference)
         cls.__init__(self, *args, **kw)

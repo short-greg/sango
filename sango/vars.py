@@ -11,7 +11,7 @@ UNDEFINED = object()
 
 V = TypeVar('V')
 
-class StoreVar(Generic[V]):
+class Store(Generic[V]):
     
     @abstractmethod
     def val(self):
@@ -23,7 +23,9 @@ class StoreVar(Generic[V]):
 
 T = TypeVar('T')
 
-class Var(StoreVar[T]):
+class Var(Store[T]):
+    """A var that can be updated
+    """
     
     def __init__(self, val: T):
 
@@ -44,7 +46,10 @@ class Var(StoreVar[T]):
         return self._val is None
 
 
-class Const(StoreVar[T]):
+class Const(Store[T]):
+    """A store that cannot be updated
+    Note: the actual value it points to can be updated.
+    """
     
     def __init__(self, val: T):
         self._val = val
@@ -56,7 +61,9 @@ class Const(StoreVar[T]):
     def is_empty(self):
         return self._val is None
 
-class Shared(StoreVar[T]):
+class Shared(Store[T]):
+    """A shared var that can be updated
+    """
 
     def __init__(self, var: Var[T]):
 
@@ -77,7 +84,10 @@ class Shared(StoreVar[T]):
         return self._var.empty()
 
 
-class ConstShared(StoreVar):
+class ConstShared(Store):
+    """A shared store that cannot be updated.
+    Note: the actual value it points to can be updated.
+    """
 
     def __init__(self, var: Var[T]):
         self._var = var
@@ -123,7 +133,12 @@ class Storage(ABC):
     def get_or_add(self, key, default=None):
         raise NotImplementedError
 
+
 class SingleStorage(Storage):
+    """A single layer of storage
+
+    TODO: Consider only using this class
+    """
 
     def __init__(self, **kwargs):
         self._data = {}
@@ -146,25 +161,52 @@ class SingleStorage(Storage):
         return self._data[key]
     
     def items(self):
+        """
+        Returns:
+            dict: All the keys and values in the storage
+        """
         return self._data.items()
 
     def keys(self):
+        """
+        Returns:
+            dict: All the keys in the storage
+        """
         return self._data.keys()
 
     def vars(self):
+        """
+        Returns:
+            dict: All the values in the storage
+        """
         return self._data.values()
 
     def get(self, key, default=None):
+        """
+        Returns:
+            Any: All value specified by key
+        """
         return self._data.get(key, default)
                 
     def __contains__(self, key: str):
+        """
+        Returns:
+            bool: Whether the storage contains the key
+        """
         return self.contains(key)
 
     def contains(self, key: str):
+        """
+        Returns:
+            bool: Whether the storage contains the key
+        """
         return key in self._data
 
     def get_or_add(self, key, default=None):
-
+        """
+        Returns:
+            bool: Whether the storage contains the key
+        """
         if not self.contains(key):
             self._data[key] = Var(default)
         
@@ -206,7 +248,9 @@ NullStorage.__contains__ = NullStorage.contains
 
 
 class Ref(ABC):
-    
+    """
+    A reference to a value in a storage
+    """
     @abstractmethod
     def val(self, store: Storage):
         raise NotImplementedError
@@ -219,6 +263,7 @@ class Ref(ABC):
     def var(self, store: Storage) -> Var:
         raise NotImplementedError
 
+# An object that indicates a reference to the storage itself
 STORE_REF = object()
 
 
@@ -296,7 +341,10 @@ HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, r
 
 
 class VarRef(Ref):
-
+    """
+    A variable reference to a value in a storage. 
+    Will create a SharedVar
+    """
     def __init__(self, var_name: str, store: Storage=None):
 
         self._var_name = var_name
@@ -320,7 +368,10 @@ class VarRef(Ref):
 
 
 class ConstRef(Ref):
-
+    """
+    A constant reference to a value in a storage. 
+    Will create a SharedConst
+    """
     def __init__(self, var_name: str):
 
         self._var_name = var_name
@@ -393,6 +444,7 @@ class ConditionSet(object):
 
 
 class Args(object):
+    """A class to store args"""
 
     def __init__(self, *args, **kwargs):
         self.args = args
@@ -406,6 +458,14 @@ class Args(object):
         return a
 
     def update_refs(self, store: Storage):
+        """Update the Refs in the store
+
+        Args:
+            store (Storage): Storage containing the values
+
+        Returns:
+            Args: Args with refs updated
+        """
         args = [self._update(v, store) for v in self.args]
         kwargs = {k: self._update(v, store) for k, v in self.kwargs.items()}
 
