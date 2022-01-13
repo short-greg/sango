@@ -1,6 +1,6 @@
 from sango.nodes import Status, Tree, task, var
 from sango.vars import Args, Ref, Var
-from .states import FSM, Discrete, Emission, State, StateMachine, StateRef, StateType, StateVar, state, state_
+from .states import FSM, Discrete, Emission, StateRef, StateType, StateVar, state, state_
 
 
 class SimpleState(Discrete[None]):
