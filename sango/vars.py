@@ -214,7 +214,7 @@ class VarRef(Ref):
     def name(self):
         return self._var_name
     
-    def val(self, store: Storage):
+    def var(self, store: Storage):
         if store is None:
             raise AttributeError("Storage to reference has not been set.")
         return store[self._var_name]
@@ -240,7 +240,7 @@ class ConstRef(Ref):
     def name(self):
         return self._var_name
     
-    def val(self, store: Storage):
+    def var(self, store: Storage):
         if store is None:
             raise AttributeError("Storage to reference has not been set.")
         return store[self._var_name]

@@ -119,6 +119,7 @@ class ClassArgFilter(object):
                 result_kwargs[name] = value
         return result_kwargs
 
+# TODO: Consider refactoring and simplifying
 
 class Storer(ABC):
     """Used to specify which variables are stored
@@ -169,10 +170,7 @@ class ConstStorer(Storer):
 
     def __init__(self, val):
 
-        if isinstance(val, Const):
-            self._val = val
-        else:
-            self._val = Const(val)
+        self._val = Const(val)
 
     @property
     def val(self):
@@ -193,7 +191,6 @@ class ConstStorer(Storer):
     def _(self, val: Const):
         self._val = val
         return self
-
 
 
 def var_(val=UNDEFINED):    
