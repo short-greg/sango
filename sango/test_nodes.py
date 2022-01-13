@@ -1,7 +1,7 @@
 from functools import wraps
 import pytest
 
-from sango.vars import Args, SingleStorage, Storage
+from sango.vars import Args, Storage
 from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, TickDecorator2nd, Tree, TypeFilter, VarStorer, action, cond, condvar, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
 
 
@@ -476,28 +476,28 @@ class TestDecoratorLoader:
     def test_tick_with_two_decorators(self):
 
         loader = task_(DummyPositive) << loads(fail) << loads(succeed)
-        task = loader.load(SingleStorage(), "dummy")
+        task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.SUCCESS
 
     def test_tick_with_two_decorators_is_success(self):
 
         loader =  task_(DummyPositive) << loads(succeed) << loads(fail)
-        task = loader.load(SingleStorage(), "dummy")
+        task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.FAILURE
 
     def test_tick_with_two_decorators_and_second_order_is_success(self):
 
         loader = task_(DummyPositive)<< loads(fail) <<loads_(iterate_over, 1) 
-        task = loader.load(SingleStorage(), "dummy")
+        task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.SUCCESS
 
     def test_tick_with_two_decorators_and_second_order_is_failure(self):
 
         loader =task_(DummyPositive) << loads(fail) << loads_(iterate_over, 2)
-        task = loader.load(SingleStorage(), "dummy")
+        task = loader.load(Storage(), "dummy")
         status = task.tick()
         assert status == Status.FAILURE
 

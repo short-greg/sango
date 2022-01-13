@@ -30,7 +30,7 @@ from enum import Enum
 import typing
 from functools import partial, singledispatch, singledispatchmethod
 from typing import Any, Iterator, Type
-from .vars import STORE_REF, Args, HierarchicalStorage, Ref, SingleStorage, StoreVar, Var, UNDEFINED, HierarchicalStorage, Storage
+from .vars import STORE_REF, Args, Ref, Storage, Store, Var, UNDEFINED
 from .utils import coalesce
 import random
 from functools import wraps
@@ -75,7 +75,7 @@ def _(val: Ref, storage: Storage):
 
 
 @_update_var.register
-def _(val: StoreVar, storage: Storage):
+def _(val: Store, storage: Storage):
     return val
 
 
@@ -137,7 +137,6 @@ class VarStorer(object):
 
     @singledispatchmethod
     def __call__(self, val):
-
         self._val = Var(val)
         return self
 
@@ -148,6 +147,7 @@ class VarStorer(object):
 
     @__call__.register
     def _(self, val: Var):
+        print('X2')
         self._val = val
         return self
 
@@ -174,7 +174,7 @@ class TaskMeta(type):
             store = kw['store']
             del kw['store']
         else:
-            store = HierarchicalStorage(SingleStorage())
+            store = Storage()
         
         for name, storer in var_stores.items():
             if name in kw:
@@ -227,14 +227,10 @@ class Task(object, metaclass=TaskMeta):
     def __getattribute__(self, key: str) -> Any:
         try:
             store: Storage = super().__getattribute__('_store')
-            if isinstance(store, HierarchicalStorage):
-                if store.contains(key, recursive=False):
-                    v = store.get(key, recursive=False)
-                    return v
-            else:
-                if store.contains(key):
-                    v = store.get(key)
-                    return v
+
+            if store.contains(key, recursive=False):
+                v = store.get(key, recursive=False)
+                return v
 
         except AttributeError:
             pass
@@ -552,7 +548,7 @@ class Loader(object):
         self.decorator: DecoratorLoader = None
     
     def load(self, storage: Storage, name: str='', reference=None):
-        storage = HierarchicalStorage(SingleStorage(), storage)
+        storage = Storage(parent=storage)
         args = self._args.update_refs(storage)
 
         if self._cls is UNDEFINED:

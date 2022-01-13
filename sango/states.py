@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import singledispatch
 import typing
-from sango.vars import UNDEFINED, Args, HierarchicalStorage, Storage
+from sango.vars import UNDEFINED, Args, Storage
 from .nodes import ClassArgFilter, Loader, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 
@@ -42,14 +42,9 @@ class State(Generic[V], metaclass=StateMeta):
     def __getattribute__(self, key: str) -> Any:
         try:
             store: Storage = super().__getattribute__('_store')
-            if isinstance(store, HierarchicalStorage):
-                if store.contains(key, recursive=False):
-                    v = store.get(key, recursive=False)
-                    return v
-            else:
-                if store.contains(key):
-                    v = store.get(key)
-                    return v
+            if store.contains(key, recursive=False):
+                v = store.get(key, recursive=False)
+                return v
 
         except AttributeError:
             pass

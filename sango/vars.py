@@ -100,56 +100,168 @@ class ConstShared(Store):
         return self._var.is_empty()
 
 
-class Storage(ABC):
+# class Storage(ABC):
 
-    @abstractmethod
-    def __setitem__(self, key, value):
-        raise NotImplementedError
+#     @abstractmethod
+#     def __setitem__(self, key, value):
+#         raise NotImplementedError
 
-    @abstractmethod
-    def __getitem__(self, key) -> Var:
-        raise NotImplementedError
+#     @abstractmethod
+#     def __getitem__(self, key) -> Var:
+#         raise NotImplementedError
     
-    @abstractmethod
-    def items(self):
-        raise NotImplementedError
+#     @abstractmethod
+#     def items(self):
+#         raise NotImplementedError
 
-    @abstractmethod
-    def keys(self):
-        raise NotImplementedError
+#     @abstractmethod
+#     def keys(self):
+#         raise NotImplementedError
 
-    @abstractmethod
-    def vars(self):
-        raise NotImplementedError
+#     @abstractmethod
+#     def vars(self):
+#         raise NotImplementedError
 
-    @abstractmethod
-    def get(self, key, default):
-        raise NotImplementedError
+#     @abstractmethod
+#     def get(self, key, default):
+#         raise NotImplementedError
     
-    def contains(self, key: str):
-        return key in self._data
+#     def contains(self, key: str):
+#         return key in self._data
 
-    @abstractmethod
-    def get_or_add(self, key, default=None):
-        raise NotImplementedError
+#     @abstractmethod
+#     def get_or_add(self, key, default=None):
+#         raise NotImplementedError
 
 
-class SingleStorage(Storage):
-    """A single layer of storage
+# class Storage(object):
+#     """A single layer of storage
 
-    TODO: Consider only using this class
-    """
+#     TODO: Consider only using this class
+#     """
 
-    def __init__(self, **kwargs):
-        self._data = {}
-        for k, v in kwargs.items():
-            
+#     def __init__(self, parent=None, vars=None):
+#         self._parent = parent
+#         self._data = {**vars}
+
+#     @singledispatchmethod
+#     def __setitem__(self, key, value):
+#         if isinstance(value, Var):
+#             self._data[key] = value
+#         else:
+#             self._data[key] = Var(value)
+
+#     @__setitem__.register
+#     def _(self, key, value: Var):
+#         self._data[key] = value
+
+#     def __getitem__(self, key) -> Var:
+#         return self._data[key]
+    
+#     def items(self):
+#         """
+#         Returns:
+#             dict: All the keys and values in the storage
+#         """
+#         return self._data.items()
+
+#     def keys(self):
+#         """
+#         Returns:
+#             dict: All the keys in the storage
+#         """
+#         return self._data.keys()
+
+#     def vars(self):
+#         """
+#         Returns:
+#             dict: All the values in the storage
+#         """
+#         return self._data.values()
+
+#     def get(self, key, default=None, recursive=False):
+#         """
+#         Returns:
+#             Any: All value specified by key
+#         """
+#         return self._data.get(key, default)
+                
+#     def __contains__(self, key: str):
+#         """
+#         Returns:
+#             bool: Whether the storage contains the key
+#         """
+#         return self.contains(key)
+
+#     def contains(self, key: str, recusive=False):
+#         """
+#         Returns:
+#             bool: Whether the storage contains the key
+#         """
+#         return key in self._data
+
+#     def get_or_add(self, key, default=None):
+#         """
+#         Returns:
+#             bool: Whether the storage contains the key
+#         """
+#         if not self.contains(key):
+#             self._data[key] = Var(default)
+        
+#         return self.get(key)
+
+# Storage.__contains__ = Storage.contains
+
+
+# class NullStorage(Storage):
+
+#     def __init__(self):
+#         self._data = {}
+
+#     def __setitem__(self, key, value):
+#         pass
+
+#     def __getitem__(self, key) -> Var:
+#         pass
+    
+#     def items(self):
+#         return self._data.items()
+
+#     def keys(self):
+#         return self._data.keys()
+
+#     def vars(self):
+#         return self._data.values()
+
+#     def get(self, key, default):
+#         return default
+
+#     def contains(self, key: str):
+#         return False
+
+#     def get_or_add(self, key, default=None):
+#         return default
+
+# NullStorage.__contains__ = NullStorage.contains
+
+class Storage(object):
+
+    def __init__(self, data: dict=None, parent=None):
+        
+        parent: Storage = parent
+        self._parent = parent or {}
+        self._data = data or {}
+        for k, v in self._data.items():
             self[k] = v
 
     @singledispatchmethod
     def __setitem__(self, key, value):
+        #TODO: Find out why register was not working
         if isinstance(value, Var):
             self._data[key] = value
+        elif isinstance(value, Ref):
+            # TODO: Aim to remove this to avoid cyclic dependency
+            self._data[key] = value.shared(self._parent)
         else:
             self._data[key] = Var(value)
 
@@ -158,94 +270,56 @@ class SingleStorage(Storage):
         self._data[key] = value
 
     def __getitem__(self, key) -> Var:
-        return self._data[key]
+
+        if key in self._data:
+            return self._data[key]
+        elif key in self._parent:
+            return self._parent[key]
+        raise ValueError(f"Key {key} not in child or parent")
     
-    def items(self):
-        """
-        Returns:
-            dict: All the keys and values in the storage
-        """
-        return self._data.items()
+    def items(self, recursive=False):
+        items = chain(self._data.items(), self._parent.items()) if recursive else self._data.items()
+        for key, val in items:
+            yield key, val
 
-    def keys(self):
-        """
-        Returns:
-            dict: All the keys in the storage
-        """
-        return self._data.keys()
+    def keys(self, recursive=False):
+        keys = chain(self._data.items(), self._parent.keys()) if recursive else self._data.keys()
+        for key in keys:
+            yield key
 
-    def vars(self):
-        """
-        Returns:
-            dict: All the values in the storage
-        """
-        return self._data.values()
+    def vars(self, recursive=False):
+        vars = chain(self._data.values(), self._parent.vars()) if recursive else self._data.values()
+        for var in vars:
+            yield var
 
-    def get(self, key, default=None):
-        """
-        Returns:
-            Any: All value specified by key
-        """
-        return self._data.get(key, default)
-                
-    def __contains__(self, key: str):
-        """
-        Returns:
-            bool: Whether the storage contains the key
-        """
-        return self.contains(key)
-
-    def contains(self, key: str):
-        """
-        Returns:
-            bool: Whether the storage contains the key
-        """
-        return key in self._data
-
-    def get_or_add(self, key, default=None):
-        """
-        Returns:
-            bool: Whether the storage contains the key
-        """
-        if not self.contains(key):
-            self._data[key] = Var(default)
+    def get(self, key, default=None, recursive=False):
         
-        return self.get(key)
-
-Storage.__contains__ = Storage.contains
-
-
-class NullStorage(Storage):
-
-    def __init__(self):
-        self._data = {}
-
-    def __setitem__(self, key, value):
-        pass
-
-    def __getitem__(self, key) -> Var:
-        pass
-    
-    def items(self):
-        return self._data.items()
-
-    def keys(self):
-        return self._data.keys()
-
-    def vars(self):
-        return self._data.values()
-
-    def get(self, key, default):
+        if key in self._data:
+            return self._data[key]
+        elif recursive and key in self._parent:
+            return self._parent[key]
         return default
+    
+    def get_or_add(self, key, default=None, recursive=False):
 
-    def contains(self, key: str):
+        if (
+            key not in self._data 
+            and (not recursive or not self._parent.contains(key, recursive=True))
+        ):
+            self._data[key] = default
+        
+        return self.get(key, recursive=recursive)
+
+    def contains(self, key: str, recursive: bool=False):
+        if key in self._data:
+            return True
+        
+        if recursive:
+            return key in self._parent
         return False
 
-    def get_or_add(self, key, default=None):
-        return default
 
-NullStorage.__contains__ = NullStorage.contains
-
+Storage.__contains__ = partialmethod(Storage.contains, recursive=False)
 
 class Ref(ABC):
     """
@@ -265,79 +339,6 @@ class Ref(ABC):
 
 # An object that indicates a reference to the storage itself
 STORE_REF = object()
-
-
-class HierarchicalStorage(Storage):
-
-    def __init__(self, child: Storage, parent: Storage=None):
-
-        self._parent = parent or NullStorage()
-        self._child = child
-
-    @singledispatchmethod
-    def __setitem__(self, key, value):
-        #TODO: Find out why this doesn't work
-        if isinstance(value, Var):
-            self._child[key] = value
-        else:
-            self._child[key] = Var(value)
-
-    @__setitem__.register
-    def _(self, key, value: Var):
-        self._child[key] = value
-
-    @__setitem__.register
-    def _(self, key, value: Ref):
-        self._child[key] = value.shared(self._parent)
-
-    def __getitem__(self, key) -> Var:
-
-        if key in self._child:
-            return self._child[key]
-        elif key in self._parent:
-            return self._parent[key]
-        raise ValueError(f"Key {key} not in child or parent")
-    
-    def items(self):
-        for key, val in chain(self._child.items(), self._parent.items()):
-            yield key, val
-
-    def keys(self):
-        for key in chain(self._child.keys(), self._parent.keys()):
-            yield key
-
-    def vars(self):
-        for var in chain(self._child.vars(), self._parent.vars()):
-            yield var
-
-    def get(self, key, default=None, recursive=False):
-        
-        if key in self._child:
-            return self._child[key]
-        elif recursive and key in self._parent:
-            return self._parent[key]
-        return default
-    
-    def get_or_add(self, key, default=None, recursive=False):
-
-        if (
-            key not in self._child 
-            and (not recursive or not self._parent.contains(key, recursive=True))
-        ):
-            self._child[key] = default
-        
-        return self.get(key, recursive=recursive)
-
-    def contains(self, key: str, recursive: bool=False):
-        if key in self._child:
-            return True
-        
-        if recursive:
-            return key in self._parent
-        return False
-
-
-HierarchicalStorage.__contains__ = partialmethod(HierarchicalStorage.contains, recursive=False)
 
 
 class VarRef(Ref):

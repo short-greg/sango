@@ -1,6 +1,8 @@
 import pytest
-from .vars import HierarchicalStorage, Shared, Storage, Var
+from .vars import Shared, Storage, Var
 
+
+# TODO: UPDATE TEST
 
 class TestVar:
 
@@ -79,55 +81,48 @@ class TestHierarchicalStorage:
     def test_get_value(self):
         child = Storage(k=1)
         parent = Storage(y=2, k=2)
-        storage = HierarchicalStorage(child, parent)
+        storage = Storage(child, parent)
         assert storage["k"].value == 1
 
     def test_storage_contains(self):
 
-        child = Storage(k=1)
-        parent = Storage(y=2, k=2)
-        storage = HierarchicalStorage(child, parent)
+
+        parent = Storage(data=dict(y=2, k=2))
+        storage = Storage(data=dict(k=1), parent=parent)
         assert "y" in storage
 
     def test_with_three_levels(self):
 
-        child = Storage(k=1)
-        parent = Storage(y=2, k=2)
-        grandparent = Storage(z=2, k=4)
-        hierarchical = HierarchicalStorage(parent, grandparent)
-        storage = HierarchicalStorage(child, hierarchical)
-        assert "z" in storage
+        grandparent = Storage(dict(z=2, k=4))
+        parent = Storage(dict(y=2, k=2), grandparent)
+        child = Storage(dict(k=1), parent)
+        assert "z" in child
 
     def test_storage_not_contains(self):
 
-        child = Storage(k=1)
-        parent = Storage(y=2, k=2)
         grandparent = Storage(z=2, k=4)
-        hierarchical = HierarchicalStorage(parent, grandparent)
-        storage = HierarchicalStorage(child, hierarchical)
-        assert "x" not in storage
+        parent = Storage(y=2, k=2)
+        child = Storage(dict(k=1))
+        assert "x" not in child
 
     def test_keys_contains_all_items(self):
 
-        child = Storage(k=1)
-        parent = Storage(y=2, k=2)
-        grandparent = Storage(z=2, k=4)
-        hierarchical = HierarchicalStorage(parent, grandparent)
-        storage = HierarchicalStorage(child, hierarchical)
+        grandparent = Storage(dict(z=2, k=4))
+        parent = Storage(dict(y=2, k=2), grandparent)
+        child = Storage(dict(k=1), parent)
 
-        keys = set(storage.keys())
+        keys = set(child.keys())
         assert "z" in keys
         assert "y" in keys
 
     def test_vars_contains_all_vars(self):
 
-        child = Storage(k=1)
-        parent = Storage(y=2, k=2)
-        grandparent = Storage(z=2, k=4)
-        hierarchical = HierarchicalStorage(parent, grandparent)
-        storage = HierarchicalStorage(child, hierarchical)
-        assert "x" not in storage
 
-        keys = set(var.value for var in storage.vars())
+        grandparent = Storage(dict(z=2, k=4))
+        parent = Storage(dict(y=2, k=2), grandparent)
+        child = Storage(dict(k=1), parent)
+        assert "x" not in child
+
+        keys = set(var.val for var in child.vars())
         assert 2 in keys
         assert 1 in keys
