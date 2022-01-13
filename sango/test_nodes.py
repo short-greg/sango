@@ -332,6 +332,19 @@ class TestTree:
         status = tree.tick()
         assert status == Status.SUCCESS
 
+    def test_tick_with_two_parallel_element(self):
+
+        class X(Tree):
+            @task
+            class entry(Parallel):
+                pos = task_(DummyPositive)
+                neg = task_(DummyNegative)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.FAILURE
+
+
 
 class TestDecorators:
 

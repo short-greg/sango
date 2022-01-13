@@ -109,14 +109,21 @@ class ClassArgFilter(object):
                 return True
 
         return False
+    
+    def _filter_helper(self, cls, result_kwargs):
+        
+        for (name, type_, value) in vals(cls):
+            if self._run_filters(name, type_, value):
+                result_kwargs[name] = value
+        return result_kwargs
+        
 
     def filter(self, cls):
         """Run the arg filter
         """
         result_kwargs = {}
-        for (name, type_, value) in vals(cls):
-            if self._run_filters(name, type_, value):
-                result_kwargs[name] = value
+        for _cls in reversed(cls.mro()):
+            self._filter_helper(_cls, result_kwargs)
         return result_kwargs
 
 
@@ -181,6 +188,8 @@ class ConstStorer(Storer):
 
     @singledispatchmethod
     def __call__(self, val):
+        if isinstance(val, Var):
+            val = val.val
         self._val = Const(val)
         return self
 
@@ -193,11 +202,6 @@ class ConstStorer(Storer):
     @__call__.register
     def _(self, val: Const):
         self._val = val
-        return self
-
-    @__call__.register
-    def _(self, val: Var):
-        self._val = Const(val.val)
         return self
 
 
@@ -301,6 +305,7 @@ class AtomicMeta(TaskMeta):
     def __call__(cls, *args, **kw):
 
         self = cls.__new__(cls, *args, **kw)
+        
         store = cls._update_var_stores(kw)
         reference = cls._get_reference(kw)
         cls.__pre_init__(self, store, reference)
@@ -612,6 +617,7 @@ class Loader(object):
         if reference is not None and not isinstance(self._cls, Tree):
             kwargs['reference'] = reference
 
+        print(isinstance(self._cls, Task), self._cls, *args.kwargs.values())
         item = self._cls(
             store=storage, name=name, *args.args, **args.kwargs, **kwargs
         )
@@ -1111,9 +1117,9 @@ class ActionRef(Action, RefMixin):
     """Task that executes an action on the reference object
     """
     
-    def __init__(self, name: str, action: str, *args, **kwargs):
+    def __init__(self, name: str, action: str, args: Args):
         super().__init__(name)
-        args = Args(*args, **kwargs).update_refs(self._store)
+        args = args.update_refs(self._store)
         
         if self._reference is None:
             raise ValueError('Reference object must be defined to create an ActionReference')
@@ -1145,10 +1151,10 @@ class ConditionalRef(Conditional, RefMixin):
     """Task that retrieves a function
     """
     
-    def __init__(self, name: str, condition: str, *args, **kwargs):
+    def __init__(self, name: str, condition: str, args: Args):
         super().__init__(name)
 
-        args = Args(*args, **kwargs).update_refs(self._store)
+        args = args.update_refs(self._store)
         if self._reference is None:
             raise ValueError('Reference object must be defined to create a ConditionalReference')
         
@@ -1200,8 +1206,10 @@ def action(act: str, *args, **kwargs) -> TaskLoader:
     Returns:
         TaskLoader
     """
-    return TaskLoader(ActionRef, Args(action=act, *args, **kwargs))
-
+    args = Args(*args, **kwargs)
+    return TaskLoader(
+        ActionRef, args=Args(args=args, action=act)
+    )
 
 def cond(check: str, *args, **kwargs) -> TaskLoader:
     """Convenience function for creating a ConditionalRef
@@ -1212,8 +1220,11 @@ def cond(check: str, *args, **kwargs) -> TaskLoader:
     Returns:
         TaskLoader
     """
-    return TaskLoader(ConditionalRef, Args(condition=check, *args, **kwargs))
-
+    args = Args(*args, **kwargs)
+    return TaskLoader(
+        ConditionalRef, 
+        args=Args(args=args, condition=check)
+    )
 
 def condvar(check: str) -> TaskLoader:
     """Convenience function for creating a ConditionalRef
@@ -1224,7 +1235,8 @@ def condvar(check: str) -> TaskLoader:
     Returns:
         TaskLoader
     """
-    return TaskLoader(ConditionalVarRef, Args(condition=check))
+
+    return TaskLoader(ConditionalVarRef, args=Args(condition=check))
 
 
 def _issubclassinstance(obj, cls):

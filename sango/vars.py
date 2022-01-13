@@ -112,16 +112,16 @@ class Storage(object):
 
     @singledispatchmethod
     def __setitem__(self, key, value):
-        if isinstance(value, Var):
+        if isinstance(value, Store):
             self._data[key] = value
         else:
             self._data[key] = Var(value)
 
     @__setitem__.register
-    def _(self, key, value: Var):
+    def _(self, key, value: Store):
         self._data[key] = value
 
-    def __getitem__(self, key) -> Var:
+    def __getitem__(self, key) -> Store:
 
         if key in self._data:
             return self._data[key]
@@ -167,7 +167,7 @@ class Storage(object):
             key not in self._data 
             and (not recursive or not self._parent.contains(key, recursive=True))
         ):
-            self._data[key] = default
+            self._data[key] = Var(default)
         
         return self.get(key, recursive=recursive)
 
