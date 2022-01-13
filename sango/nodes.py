@@ -119,6 +119,7 @@ class ClassArgFilter(object):
                 result_kwargs[name] = value
         return result_kwargs
 
+
 # TODO: Consider refactoring and simplifying
 
 class Storer(ABC):
@@ -150,6 +151,8 @@ class VarStorer(Storer):
 
     @singledispatchmethod
     def __call__(self, val):
+        if isinstance(val, Const):
+            raise ValueError('Cannot convert constant to var')
         self._val = Var(val)
         return self
 
@@ -190,6 +193,11 @@ class ConstStorer(Storer):
     @__call__.register
     def _(self, val: Const):
         self._val = val
+        return self
+
+    @__call__.register
+    def _(self, val: Var):
+        self._val = Const(val.val)
         return self
 
 
