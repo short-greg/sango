@@ -203,7 +203,7 @@ def var_(val=UNDEFINED):
 
 
 def const_(val=UNDEFINED):    
-    """Convenience function to create a VarStorer
+    """Convenience function to create a ConstStorer
     """
     return ConstStorer(val)
 
@@ -218,7 +218,7 @@ class TaskMeta(type):
 
     def _update_var_stores(cls, kw):
         
-        var_stores = ClassArgFilter([TypeFilter(VarStorer)]).filter(cls)
+        var_stores = ClassArgFilter([TypeFilter(Storer)]).filter(cls)
         if 'store' in kw:
             store = kw['store']
             del kw['store']
