@@ -30,7 +30,7 @@ from enum import Enum
 import typing
 from functools import singledispatch, singledispatchmethod
 from typing import Any, Iterator
-from .vars import STORE_REF, Args, Ref, Storage, Store, Var, UNDEFINED
+from .vars import STORE_REF, Args, Const, Ref, Storage, Store, Var, UNDEFINED
 from .utils import coalesce
 import random
 from functools import wraps
@@ -120,7 +120,19 @@ class ClassArgFilter(object):
         return result_kwargs
 
 
-class VarStorer(object):
+class Storer(ABC):
+    """Used to specify which variables are stored
+    """
+    @abstractproperty
+    def val(self):
+        raise NotImplementedError
+
+    @abstractproperty
+    def __call__(self, val):
+        raise NotImplementedError
+
+
+class VarStorer(Storer):
     """Used to specify which variables are stored
     """
 
@@ -151,11 +163,49 @@ class VarStorer(object):
         return self
 
 
-def var(val=UNDEFINED):    
+class ConstStorer(Storer):
+    """Used to specify which variables are stored
+    """
+
+    def __init__(self, val):
+
+        if isinstance(val, Const):
+            self._val = val
+        else:
+            self._val = Const(val)
+
+    @property
+    def val(self):
+        return self._val
+
+    @singledispatchmethod
+    def __call__(self, val):
+        self._val = Const(val)
+        return self
+
+    # TODO: Decide what to do here
+    @__call__.register
+    def _(self, val: Ref):
+        self._val = val
+        return self
+
+    @__call__.register
+    def _(self, val: Const):
+        self._val = val
+        return self
+
+
+
+def var_(val=UNDEFINED):    
     """Convenience function to create a VarStorer
     """
-    return VarStorer(Var(val))
+    return VarStorer(val)
 
+
+def const_(val=UNDEFINED):    
+    """Convenience function to create a VarStorer
+    """
+    return ConstStorer(val)
 
 def ref_is_external(task_cls, default=True):
     

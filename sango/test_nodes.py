@@ -1,8 +1,16 @@
 from functools import wraps
 import pytest
 
-from sango.vars import Args, Storage
-from .nodes import Action, Conditional, Fallback, LinearPlanner, Parallel, Sequence, Status, Task, TaskLoader, TickDecorator, TickDecorator2nd, Tree, TypeFilter, VarStorer, action, cond, condvar, fail, fail_on_first, loads, loads_, neg, succeed, succeed_on_first, task, task_, until, vals, ArgFilter, ClassArgFilter, var
+from sango.vars import Storage
+from .nodes import (
+    Action, Conditional, Fallback, LinearPlanner, 
+    Parallel, Sequence, Status, Task, TaskLoader, 
+    TickDecorator, TickDecorator2nd, Tree, 
+    TypeFilter, VarStorer, action, cond, condvar, 
+    fail, fail_on_first, loads, loads_, neg, 
+    succeed, succeed_on_first, task, task_, until, 
+    vals, ClassArgFilter, var_
+)
 
 
 class TestStatus:
@@ -197,7 +205,7 @@ class TestCreateSequenceTask:
 
         class Pos(Sequence):
             neg = task(DummyPositive)
-            data = var(2)
+            data = var_(2)
         
         seq = Pos()
         assert seq.data.val == 2
@@ -206,7 +214,7 @@ class TestCreateSequenceTask:
 
         class Pos(Sequence):
             neg = task(DummyPositive)
-            data = var(2)
+            data = var_(2)
         
         seq = Pos(data=3)
         assert seq.data.val == 3
