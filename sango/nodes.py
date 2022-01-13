@@ -1100,7 +1100,7 @@ class RefMixin(object):
 
         return Args(
             *[cls._process_ref_arg(arg, store) for arg in args.args],
-            **{k: cls._process_ref_arg(arg, store) for k, arg in args.kwargs}
+            **{k: cls._process_ref_arg(arg, store) for k, arg in args.kwargs.items()}
         )
 
     @classmethod
