@@ -28,8 +28,8 @@ class tree(Tree):
 from abc import ABC, abstractmethod, abstractproperty
 from enum import Enum
 import typing
-from functools import partial, singledispatch, singledispatchmethod
-from typing import Any, Iterator, Type
+from functools import singledispatch, singledispatchmethod
+from typing import Any, Iterator
 from .vars import STORE_REF, Args, Ref, Storage, Store, Var, UNDEFINED
 from .utils import coalesce
 import random
