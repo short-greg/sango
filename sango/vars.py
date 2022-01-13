@@ -161,13 +161,13 @@ class Storage(object):
             return self._parent[key]
         return default
     
-    def get_or_add(self, key, default=None, recursive=True):
+    def get_or_add(self, key, default=None, default_const: bool=False, recursive=True):
 
         if (
             key not in self._data 
             and (not recursive or not self._parent.contains(key, recursive=True))
         ):
-            self._data[key] = Var(default)
+            self._data[key] = Const(default) if default_const else Var(default)
         
         return self.get(key, recursive=recursive)
 
