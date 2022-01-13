@@ -105,19 +105,15 @@ class Storage(object):
     def __init__(self, data: dict=None, parent=None):
         
         parent: Storage = parent
-        self._parent = parent or {}
+        self._parent = parent
         self._data = data or {}
         for k, v in self._data.items():
             self[k] = v
 
     @singledispatchmethod
     def __setitem__(self, key, value):
-        #TODO: Find out why register was not working
         if isinstance(value, Var):
             self._data[key] = value
-        elif isinstance(value, Ref):
-            # TODO: Aim to remove this to avoid cyclic dependency
-            self._data[key] = value.shared(self._parent)
         else:
             self._data[key] = Var(value)
 
@@ -133,22 +129,31 @@ class Storage(object):
             return self._parent[key]
         raise ValueError(f"Key {key} not in child or parent")
     
-    def items(self, recursive=False):
-        items = chain(self._data.items(), self._parent.items()) if recursive else self._data.items()
+    def items(self, recursive=True):
+        
+        items = self._data.items()
+        if recursive and self._parent is not None:
+            items = chain(items, self._parent.items(recursive))
+
         for key, val in items:
             yield key, val
 
-    def keys(self, recursive=False):
-        keys = chain(self._data.items(), self._parent.keys()) if recursive else self._data.keys()
+    def keys(self, recursive=True):
+        keys = self._data.keys()
+        if recursive and self._parent is not None:
+            keys = chain(keys, self._parent.keys(recursive))
+
         for key in keys:
             yield key
 
-    def vars(self, recursive=False):
-        vars = chain(self._data.values(), self._parent.vars()) if recursive else self._data.values()
+    def vars(self, recursive=True):
+        vars = self._data.values()
+        if recursive and self._parent is not None:
+            vars = chain(vars, self._parent.vars(recursive))
         for var in vars:
             yield var
 
-    def get(self, key, default=None, recursive=False):
+    def get(self, key, default=None, recursive=True):
         
         if key in self._data:
             return self._data[key]
@@ -156,7 +161,7 @@ class Storage(object):
             return self._parent[key]
         return default
     
-    def get_or_add(self, key, default=None, recursive=False):
+    def get_or_add(self, key, default=None, recursive=True):
 
         if (
             key not in self._data 
@@ -166,12 +171,12 @@ class Storage(object):
         
         return self.get(key, recursive=recursive)
 
-    def contains(self, key: str, recursive: bool=False):
+    def contains(self, key: str, recursive: bool=True):
         if key in self._data:
             return True
         
-        if recursive:
-            return key in self._parent
+        if recursive and self._parent is not None:
+            return self._parent.contains(key, True)
         return False
 
 
@@ -202,10 +207,8 @@ class VarRef(Ref):
     A variable reference to a value in a storage. 
     Will create a SharedVar
     """
-    def __init__(self, var_name: str, store: Storage=None):
-
+    def __init__(self, var_name: str):
         self._var_name = var_name
-        self.store = store
 
     @property
     def name(self):

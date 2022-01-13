@@ -20,7 +20,7 @@ class FloatState2(Discrete[float]):
     x = var(3.)
 
     def update(self) -> Emission[float]:
-        return Emission(self, self.x.value)
+        return Emission(self, self.x.val)
 
 
 class FloatState3(Discrete[float]):
@@ -33,12 +33,12 @@ class FloatState3(Discrete[float]):
         self._status = status
 
     def update(self) -> Emission[float]:
-        self.x.value += 1
-        return Emission(self._next_state, self.x.value)
+        self.x.val += 1
+        return Emission(self._next_state, self.x.val)
     
     def reset(self):
 
-        self.x.value *= 0.
+        self.x.val *= 0.
     
 
 class TestEmission:
@@ -123,7 +123,7 @@ class FloatState2(Discrete[float]):
     x = var(3.)
 
     def update(self) -> Emission[float]:
-        return Emission(self, self.x.value)
+        return Emission(self, self.x.val)
 
 class TestFSMTaskInTree:
 

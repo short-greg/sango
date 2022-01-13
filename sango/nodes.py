@@ -147,7 +147,6 @@ class VarStorer(object):
 
     @__call__.register
     def _(self, val: Var):
-        print('X2')
         self._val = val
         return self
 
