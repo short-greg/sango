@@ -444,6 +444,7 @@ class Composite(Task, metaclass=CompositeMeta):
     ):
         super().__init__(name)
         self._planner = planner or LinearPlanner(self._tasks)
+        self._sub_status = Status.READY
 
     def __pre_init__(self, tasks: typing.List[Task], store: Storage, reference):
         super().__pre_init__(store, reference)
@@ -679,11 +680,13 @@ class Sequence(Composite):
 
         if self._planner.end() is True:
             return Status.NONE
+        
         status = self._planner.cur.tick()
         if status == Status.FAILURE:
             return Status.FAILURE
         
-        self._planner.adv()
+        if status == Status.SUCCESS:
+            self._planner.adv()
         if self._planner.end():
             return Status.SUCCESS
         return Status.RUNNING
@@ -701,10 +704,13 @@ class Fallback(Composite):
             return Status.NONE
         
         status = self._planner.cur.tick()
+        print('Fallback: ', status, self._planner.cur)
         if status == Status.SUCCESS:
             return Status.SUCCESS
         
-        self._planner.adv()
+        if status == Status.FAILURE:
+            self._planner.adv()
+        
         if self._planner.end():
             return Status.FAILURE
         return Status.RUNNING
@@ -729,8 +735,7 @@ class Parallel(Composite):
             if s == status:
                 total += 1
         return total
-        # return functools.reduce(lambda x, y: x + (1 if y == status else 0), self._statuses)
-
+    
     def reset(self):
         super().reset()
         self._statuses = []
@@ -1035,6 +1040,7 @@ class until(TickDecorator):
         tick = node.tick
         def _(*args, **kwargs):
             status = tick(*args, **kwargs)
+            print(status)
             if status == Status.SUCCESS:
                 return status
             elif status == Status.FAILURE:
