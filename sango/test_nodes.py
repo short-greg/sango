@@ -1,4 +1,5 @@
 from functools import wraps
+from .vars import ref
 import pytest
 
 from sango.vars import Storage
@@ -666,3 +667,26 @@ class TestTreeReference:
         status = tree.tick()
         # negative fallback ends on first failure
         assert status == Status.SUCCESS   
+
+    def test_trial_tree_with_fallback_until_depth(self):
+         
+        class TrialTree(Tree):
+
+            t = var_()
+
+            def __init__(self, name: str=''):
+                super().__init__(name)
+                self._count = 0
+                self.t.val = 2
+
+            @task
+            class entry(Sequence):
+                x = action("x", ref.t)
+            
+            def x(self, t):
+                if t.val == 2:
+                    return Status.SUCCESS
+                return Status.FAILURE
+        
+        tree = TrialTree()
+        assert tree.tick() == Status.SUCCESS

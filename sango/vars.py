@@ -125,7 +125,7 @@ class Storage(object):
 
         if key in self._data:
             return self._data[key]
-        elif key in self._parent:
+        elif self._parent.contains(key, True):
             return self._parent[key]
         raise ValueError(f"Key {key} not in child or parent")
     
@@ -157,7 +157,7 @@ class Storage(object):
         
         if key in self._data:
             return self._data[key]
-        elif recursive and key in self._parent:
+        elif recursive and self._parent.contains(key, recursive):
             return self._parent[key]
         return default
     
@@ -277,8 +277,8 @@ class _const_ref(object):
         return ConstRef(key)
 
 
-ref = _ref()
-cref = _const_ref()
+ref_ = _ref()
+cref_ = _const_ref()
 
 
 class ConditionSet(object):
