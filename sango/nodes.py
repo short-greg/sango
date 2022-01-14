@@ -30,7 +30,7 @@ from enum import Enum
 import typing
 from functools import singledispatch, singledispatchmethod
 from typing import Any, Iterator
-from .vars import STORE_REF, Args, Const, Ref, Storage, Store, Var, UNDEFINED
+from .vars import STORE_REF, Args, Const, ConstShared, Ref, Shared, Storage, Store, Var, UNDEFINED
 from .utils import coalesce
 import random
 from functools import wraps
@@ -147,7 +147,7 @@ class VarStorer(Storer):
 
     def __init__(self, val):
 
-        if isinstance(val, Var):
+        if isinstance(val, Store):
             self._val = val
         else:
             self._val = Var(val)
@@ -173,6 +173,7 @@ class VarStorer(Storer):
         self._val = val
         return self
 
+# TODO: Improve the way storage works
 
 class ConstStorer(Storer):
     """Used to specify which variables are stored
@@ -190,6 +191,15 @@ class ConstStorer(Storer):
     def __call__(self, val):
         if isinstance(val, Var):
             val = val.val
+        elif isinstance(val, Shared):
+            self._val = ConstShared(val.var)
+            return self
+        elif isinstance(val, Const):
+            self._val = val
+            return self
+        elif isinstance(val, ConstShared):
+            self._val = val
+            return self
         self._val = Const(val)
         return self
 

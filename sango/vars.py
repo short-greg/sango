@@ -61,6 +61,7 @@ class Const(Store[T]):
     def is_empty(self):
         return self._val is None
 
+
 class Shared(Store[T]):
     """A shared var that can be updated
     """
@@ -72,6 +73,10 @@ class Shared(Store[T]):
     @property
     def val(self):
         return self._var.val
+    
+    @property
+    def var(self):
+        return self._var
 
     @val.setter
     def val(self, val) -> T:
@@ -95,6 +100,10 @@ class ConstShared(Store):
     @property
     def val(self) -> T:
         return self._var.val
+
+    @property
+    def var(self):
+        return self._var
 
     def is_empty(self):
         return self._var.is_empty()

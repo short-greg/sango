@@ -143,7 +143,7 @@ class TestCreateAtomicTask:
         assert actor.status == Status.READY
 
 
-class TestCreateSequenceTask:
+class TestSequenceTask:
 
     def test_num_elements_with_one_element(self):
 
@@ -381,6 +381,22 @@ class TestDecorators:
             @task
             @succeed
             class entry(Sequence):
+                neg = task_(DummyNegative)
+                pos = task_(DummyPositive)
+        
+        tree = X()
+        status = tree.tick()
+        assert status == Status.SUCCESS
+    
+    def test_until_neg_with_sequence(self):
+
+        class X(Tree):
+
+            @task
+            @until
+            @neg
+            class entry(Sequence):
+
                 neg = task_(DummyNegative)
                 pos = task_(DummyPositive)
         
@@ -689,4 +705,24 @@ class TestTreeReference:
                 return Status.FAILURE
         
         tree = TrialTree()
+        assert tree.tick() == Status.SUCCESS
+
+class TestExternalAction:
+
+    def test_num_elements_with_one_element(self):
+
+        class GreaterThan0(Action):
+
+            x = var_()
+
+            def act(self):
+                if self.x.val > 0:
+                    return Status.SUCCESS
+                return Status.FAILURE
+
+        class Pos(Tree):
+
+            entry = task_(GreaterThan0, x=2)
+        
+        tree = Pos()
         assert tree.tick() == Status.SUCCESS
