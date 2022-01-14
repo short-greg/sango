@@ -1,5 +1,5 @@
 from functools import wraps
-from .vars import ref
+from .vars import ref_
 import pytest
 
 from sango.vars import Storage
@@ -681,7 +681,7 @@ class TestTreeReference:
 
             @task
             class entry(Sequence):
-                x = action("x", ref.t)
+                x = action("x", ref_.t)
             
             def x(self, t):
                 if t.val == 2:
