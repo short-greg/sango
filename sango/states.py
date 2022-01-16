@@ -156,6 +156,19 @@ class Start(Discrete[V]):
         raise NotImplementedError
 
 
+class Running(Discrete[V]):
+
+    def __init__(self, name: str=''):
+        """
+        Args:
+            name (str, optional): [description]. Defaults to ''.
+        """
+        super().__init__(StateType.READY, name)
+
+    def update(self):
+        raise NotImplementedError
+
+
 class StateRef(object):
 
     def __init__(self, ref: str):
