@@ -4,9 +4,13 @@
 
 ## Diving In
 
-Behavior trees provide a modular approach to programming. The design is procedural which makes them ideal for modeling complex logic. They are also hierarchical in nature so can factorize a program into high level and low level logic. These traits have lead them to find use in control problems such as Game AI and Robotics.
+Behavior Trees provide a modular approach to programming. The design is procedural which makes them ideal for modeling complex logic. They are also hierarchical in nature so can factorize a program into high level and low level logic. These traits have lead them to find use in control problems such as Game AI and Robotics.
 
-Personally, I am working on this project to use them in machine learning.
+Behavior Trees typically consist of four types of nodes
+* Composition: A task which executes multiple sub tasks 
+* Action: A task which may one for more than one iteration and changes the state of the system
+* Conditional: A task which returns Success or Failure based on the current state of the system or environment
+* Decorator: A task which alters the status returned by another task
 
 ## Diving Deeper
 
@@ -15,6 +19,7 @@ For Sango, I aimed to have the following to make it easy to define trees.
 * Visual hierarchy of the tasks in the tree: To make it easy to understand the logic
 * Cohesion between the tree structure and its tasks: To make it easy to understand and edit the tree
 * Easy way to pass data between nodes: To prevent coupling of tasks that should not be coupled
+* Integration of state machines: To make it possible to implement complex state machines such as hierarchical state machines, factorized state machines etc using the behavior tree architecture
 
 The behavior scripts are similar to those in Panda BT for Unity, but they are defined directly in Python. This increases cohesion between the tree and actions when it is best not  to decouple them. Decoupling is also easy when that is desirable.
 
