@@ -707,6 +707,7 @@ class TestTreeReference:
         tree = TrialTree()
         assert tree.tick() == Status.SUCCESS
 
+
 class TestExternalAction:
 
     def test_num_elements_with_one_element(self):

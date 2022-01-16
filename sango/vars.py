@@ -88,6 +88,7 @@ class Shared(Store[T]):
     def empty(self):
         return self._var.empty()
 
+# TODO: REMOVE CONST / Const Shared etc.. It makes things too complex
 
 class ConstShared(Store):
     """A shared store that cannot be updated.

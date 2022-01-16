@@ -127,21 +127,7 @@ class ClassArgFilter(object):
         return result_kwargs
 
 
-# TODO: Consider refactoring and simplifying
-
-class Storer(ABC):
-    """Used to specify which variables are stored
-    """
-    @abstractproperty
-    def val(self):
-        raise NotImplementedError
-
-    @abstractproperty
-    def __call__(self, val):
-        raise NotImplementedError
-
-
-class VarStorer(Storer):
+class VarStorer(object):
     """Used to specify which variables are stored
     """
 
@@ -173,58 +159,12 @@ class VarStorer(Storer):
         self._val = val
         return self
 
-# TODO: Improve the way storage works
-
-class ConstStorer(Storer):
-    """Used to specify which variables are stored
-    """
-
-    def __init__(self, val):
-
-        self._val = Const(val)
-
-    @property
-    def val(self):
-        return self._val
-
-    @singledispatchmethod
-    def __call__(self, val):
-        if isinstance(val, Var):
-            val = val.val
-        elif isinstance(val, Shared):
-            self._val = ConstShared(val.var)
-            return self
-        elif isinstance(val, Const):
-            self._val = val
-            return self
-        elif isinstance(val, ConstShared):
-            self._val = val
-            return self
-        self._val = Const(val)
-        return self
-
-    # TODO: Decide what to do here
-    @__call__.register
-    def _(self, val: Ref):
-        self._val = val
-        return self
-
-    @__call__.register
-    def _(self, val: Const):
-        self._val = val
-        return self
-
 
 def var_(val=UNDEFINED):    
     """Convenience function to create a VarStorer
     """
     return VarStorer(val)
 
-
-def const_(val=UNDEFINED):    
-    """Convenience function to create a ConstStorer
-    """
-    return ConstStorer(val)
 
 def ref_is_external(task_cls, default=True):
     
@@ -237,7 +177,7 @@ class TaskMeta(type):
 
     def _update_var_stores(cls, kw):
         
-        var_stores = ClassArgFilter([TypeFilter(Storer)]).filter(cls)
+        var_stores = ClassArgFilter([TypeFilter(VarStorer)]).filter(cls)
         if 'store' in kw:
             store = kw['store']
             del kw['store']
@@ -976,12 +916,6 @@ def decorate(decorator: typing.Type[TaskDecorator], *args, **kwargs):
         decorator, Args(*args, **kwargs)
     )
 
-@decorate.register
-def _(decorator: str, *args, **kwargs):
-    return TaskRefDecoratorLoader(
-        decorator, Args(*args, **kwargs)
-    )
-
 
 class TickDecoratorLoader(AtomicDecoratorLoader):
 
@@ -1096,9 +1030,16 @@ class fail_on_first(TickDecorator):
         return _
 
 
-class RefMixin(object):
+class MemberRef(object):
     """Mixin for 'Reference' tasks. 'Reference' tasks call the 'Reference' object
     """
+
+    def __init__(self, member: str, args: Args, store: Store, reference):
+
+        self._member = member
+        self._args = args
+        self._store = store
+        self._reference = reference
 
     @classmethod
     def _process_ref_arg(cls, arg, store):
@@ -1111,106 +1052,70 @@ class RefMixin(object):
         
         return arg
 
-    @classmethod
-    def _process_ref_args(cls, args: Args, store):
+    def _process_ref_args(self, args: Args, store):
 
         return Args(
-            *[cls._process_ref_arg(arg, store) for arg in args.args],
-            **{k: cls._process_ref_arg(arg, store) for k, arg in args.kwargs.items()}
+            *[self._process_ref_arg(arg, store) for arg in args.args],
+            **{k: self._process_ref_arg(arg, store) for k, arg in args.kwargs.items()}
         )
+    
+    def execute(self):
+        args = self._process_ref_args()
+        return getattr(self._reference, self._member)(*args.args, **args.kwargs)
 
-    @classmethod
-    def _get_ref(cls, reference, member):
-        return getattr(reference, member)
-
-    @classmethod
-    def _execute_ref(cls, reference, member, args: Args, store):
-        args = cls._process_ref_args(args, store)
-        return getattr(reference, member)(*args.args, **args.kwargs)
+    def get(self):
+        return getattr(self._reference, self._member)
 
 
-class ActionRef(Action, RefMixin):
+class MemberRefFactory(object):
+
+    def __init__(self, member: str, args: Args):
+
+        self._member = member
+        self._args = args
+    
+    def produce(self, store: Store, reference):
+
+        if reference is None:
+            raise ValueError('Reference object must be defined to create an ActionReference')
+        args = self._args.update_refs(self._store)
+        return MemberRef(self._member, args, store, reference)
+
+
+class ActionRef(Action):
     """Task that executes an action on the reference object
     """
     
-    def __init__(self, name: str, action: str, args: Args):
+    def __init__(self, name: str, member_factory: MemberRefFactory):
         super().__init__(name)
-        args = args.update_refs(self._store)
-        
-        if self._reference is None:
-            raise ValueError('Reference object must be defined to create an ActionReference')
-
-        self._action_str = action
-        self._args = args
+        self._member_ref = member_factory.produce(self._store, self._reference)
 
     def act(self):
-        return self._execute_ref(self._reference, self._action_str, self._args, self._store)
+        return self._member_ref.execute()
 
 
-class ConditionalVarRef(Conditional, RefMixin):
+class ConditionalVarRef(Conditional):
     """Task that retrieves a boolean variable
     """
 
-    def __init__(self, name: str, condition: str):
+    def __init__(self, name: str, member_factory: MemberRefFactory):
         super().__init__(name)
-
-        if self._reference is None:
-            raise ValueError('Reference object must be defined to create a ConditionalReference')
-        
-        self._condition_str = condition
+        self._member_ref = member_factory.produce(self._store, self._reference)
 
     def check(self):
-        return self._get_ref(self._reference, self._condition_str)
+        return self._member_ref.get()
 
 
-class ConditionalRef(Conditional, RefMixin):
+class ConditionalRef(Conditional):
     """Task that retrieves a function
     """
     
-    def __init__(self, name: str, condition: str, args: Args):
+    def __init__(self, name: str, member_ref: MemberRef):
         super().__init__(name)
-
-        args = args.update_refs(self._store)
-        if self._reference is None:
-            raise ValueError('Reference object must be defined to create a ConditionalReference')
-        
-        self._condition_str = condition
-        self._args = args
+        self._member_ref = member_ref
 
     def check(self):
-        return self._execute_ref(self._reference, self._condition_str, self._args, self._store)
-
-
-class TaskRefDecorator(TaskDecorator, RefMixin):
-    """Decorator that uses a reference function. The reference function
-    Must take in a task
-    """
-
-    def __init__(self, name: str, decoration: str, args: Args, task: Task):
-        super().__init__(name, task)
-
-        if self._reference is None:
-            raise ValueError('Reference object must be defined to create a Decorator')
-        
-        self._decoration_str = decoration
-        self._args = args
-        self._args.kwargs['task'] = task
-
-    def decorate(self):
-        return self._execute_ref(self._reference, self._decoration_str, self._args, self._store)
-
-
-class TaskRefDecoratorLoader(AtomicDecoratorLoader):
-
-    def __init__(self, decoration: str, args: Args, name: str=None):
-
-        super().__init__()
-        self._decoration = decoration
-        self._name = name or decoration
-        self._args = args
-
-    def decorate(self, item):
-        return TaskRefDecorator(self._name, self._decoration, self._args, item)
+        return self._member_ref.execute()
 
 
 def action(act: str, *args, **kwargs) -> TaskLoader:
@@ -1222,9 +1127,9 @@ def action(act: str, *args, **kwargs) -> TaskLoader:
     Returns:
         TaskLoader
     """
-    args = Args(*args, **kwargs)
+    factory  = MemberRefFactory(act, Args(*args, **kwargs))
     return TaskLoader(
-        ActionRef, args=Args(args=args, action=act)
+        ActionRef, args=Args(member_factory=factory)
     )
 
 def cond(check: str, *args, **kwargs) -> TaskLoader:
@@ -1236,10 +1141,9 @@ def cond(check: str, *args, **kwargs) -> TaskLoader:
     Returns:
         TaskLoader
     """
-    args = Args(*args, **kwargs)
+    factory  = MemberRefFactory(check, Args(*args, **kwargs))
     return TaskLoader(
-        ConditionalRef, 
-        args=Args(args=args, condition=check)
+        ConditionalRef, args=Args(member_factory=factory)
     )
 
 def condvar(check: str) -> TaskLoader:
@@ -1251,8 +1155,8 @@ def condvar(check: str) -> TaskLoader:
     Returns:
         TaskLoader
     """
-
-    return TaskLoader(ConditionalVarRef, args=Args(condition=check))
+    factory  = MemberRefFactory(check, Args())
+    return TaskLoader(ConditionalVarRef, args=Args(member_factory=factory))
 
 
 def _issubclassinstance(obj, cls):
@@ -1296,10 +1200,50 @@ def loads_(decorator, *args, **kwargs):
     Returns:
         DecoratorLoader
     """
-    if isinstance(decorator, str):
-        return TaskRefDecoratorLoader(decorator, Args(*args, **kwargs))
 
-    elif _issubclassinstance(decorator, TickDecorator2nd):
+    if _issubclassinstance(decorator, TickDecorator2nd):
         return TickDecoratorLoader(decorator(*args, **kwargs))
 
     raise ValueError
+
+
+
+# class TaskRefDecorator(TaskDecorator):
+#     """Decorator that uses a reference function. The reference function
+#     Must take in a task
+#     """
+
+#     def __init__(self, name: str, member_factory: MemberRefFactory, task: Task):
+#         super().__init__(name, task)
+
+#         self._member_ref = member_factory.produce(self._store, self._reference)
+#         # if self._reference is None:
+#         #     raise ValueError('Reference object must be defined to create a Decorator')
+        
+#         # self._decoration_str = decoration
+#         # self._args = args
+#         # self._args.kwargs['task'] = task
+
+#     def decorate(self):
+#         return self._member_ref.execute()
+#         # return self._execute_ref(self._reference, self._decoration_str, self._args, self._store)
+
+
+# class TaskRefDecoratorLoader(AtomicDecoratorLoader):
+
+#     def __init__(self, decoration: str, args: Args, name: str=None):
+
+#         super().__init__()
+#         self._decoration = decoration
+#         self._name = name or decoration
+#         self._args = args
+
+#     def decorate(self, item):
+#         return TaskRefDecorator(self._name, self._decoration, self._args, item)
+
+
+# @decorate.register
+# def _(decorator: str, *args, **kwargs):
+#     return TaskRefDecoratorLoader(
+#         decorator, Args(*args, **kwargs)
+#     )
