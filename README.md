@@ -1,4 +1,4 @@
-# Sango - A Behavior Tree library in Python
+# Sango - Intuitive Behavior Tree Design in Python
 
 *Sango* makes behavior tree creation easy by making definition hierarchical.
 
@@ -14,6 +14,7 @@ Sango represents the hierarchy of execution visually in code. This makes Behavio
 class train(Tree):
 
   @task
+  @upto(10)  # decorator to repeat up to 10 times unless a failure status is returned
   class entry(Sequence):
     
     @task
@@ -46,4 +47,4 @@ class train(Tree):
     
 ```
 
-Here, *entry* indicates the entry task of the tree.  
+Here, *entry* indicates the entry task of the tree. Here, it is a sequence task so successive subtasks are executed when success is returned.. *set_data* is a Fallback task (like a logical 'or'). Successive tasks are executed only on failure.
