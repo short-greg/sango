@@ -90,25 +90,6 @@ class Shared(Store[T]):
 
 # TODO: REMOVE CONST / Const Shared etc.. It makes things too complex
 
-class ConstShared(Store):
-    """A shared store that cannot be updated.
-    Note: the actual value it points to can be updated.
-    """
-
-    def __init__(self, var: Var[T]):
-        self._var = var
-    
-    @property
-    def val(self) -> T:
-        return self._var.val
-
-    @property
-    def var(self):
-        return self._var
-
-    def is_empty(self):
-        return self._var.is_empty()
-
 
 class Storage(object):
 
@@ -237,31 +218,6 @@ class VarRef(Ref):
         return Var(store[self._var_name].val)
 
 
-class ConstRef(Ref):
-    """
-    A constant reference to a value in a storage. 
-    Will create a SharedConst
-    """
-    def __init__(self, var_name: str):
-
-        self._var_name = var_name
-
-    @property
-    def name(self):
-        return self._var_name
-    
-    def var(self, store: Storage):
-        if store is None:
-            raise AttributeError("Storage to reference has not been set.")
-        return store[self._var_name]
-
-    def shared(self, store: Storage) -> Shared:
-        return ConstShared(store[self._var_name])
-    
-    def val(self, store: Storage) -> Var:
-        return Const(store[self._var_name].val)
-
-
 @dataclass
 class Condition:
     value: str
@@ -277,18 +233,7 @@ class _ref(object):
         return VarRef(key)
 
 
-class _const_ref(object):
-
-    def __setattr__(self, __name: str, __value) -> None:
-        raise AttributeError('Cannot set {__name} for ref object')
-
-    def __getattr__(self, key):
-
-        return ConstRef(key)
-
-
 ref_ = _ref()
-cref_ = _const_ref()
 
 
 class ConditionSet(object):

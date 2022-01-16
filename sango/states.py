@@ -103,7 +103,6 @@ class Discrete(State[V], metaclass=StateMeta):
     
     @property
     def status(self) -> StateType:
-        print(self._name, self._status)
         return self._status
 
     @abstractmethod
@@ -116,6 +115,45 @@ class Discrete(State[V], metaclass=StateMeta):
     
     def reset(self):
         self.enter()
+
+
+class Failure(Discrete[V]):
+
+    def __init__(self, name: str=''):
+        """
+        Args:
+            name (str, optional): [description]. Defaults to ''.
+        """
+        super().__init__(StateType.FAILURE, name)
+
+    def update(self):
+        return Emission(self)
+
+
+class Success(Discrete[V]):
+
+    def __init__(self, name: str=''):
+        """
+        Args:
+            name (str, optional): [description]. Defaults to ''.
+        """
+        super().__init__(StateType.SUCCESS, name)
+
+    def update(self):
+        return Emission(self)
+
+
+class Start(Discrete[V]):
+
+    def __init__(self, name: str=''):
+        """
+        Args:
+            name (str, optional): [description]. Defaults to ''.
+        """
+        super().__init__(StateType.READY, name)
+
+    def update(self):
+        raise NotImplementedError
 
 
 class StateRef(object):
