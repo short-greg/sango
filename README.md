@@ -33,14 +33,14 @@ class train(Tree):
     self._training_data = None
     self._dataset = dataset
  
-  def learn(self):
+  def learn(self) -> Status:
     pass
     
-  def load_data(self):
+  def load_data(self) -> Status:
     # create a new data loader based on the dataloader
     pass
     
-  def get_next_data(self):
+  def get_next_data(self) -> Status:
     # get the next item in dataloader
     pass
     
