@@ -4,9 +4,8 @@ makes it possible to build more complex state machines, such as
 ones that execute in parallel or ones that are pause the execution of others
 """
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass
-from enum import Enum
 from functools import singledispatch
 import typing
 from sango.vars import UNDEFINED, Args, Storage
@@ -66,31 +65,9 @@ class State(Generic[V], metaclass=StateMeta):
         pass
 
 
-class StateType(Enum):
-
-    SUCCESS = 0
-    FAILURE = 1
-    READY = 2
-    RUNNING = 3
-
-    @property
-    def final(self):
-        return self == StateType.SUCCESS or self == StateType.FAILURE
-
-    @property
-    def status(self):
-        if self == StateType.SUCCESS:
-            return Status.SUCCESS
-        if self == StateType.FAILURE:
-            return Status.FAILURE
-        if self == StateType.READY:
-            return Status.READY
-        return Status.RUNNING
-
-
 class Discrete(State[V], metaclass=StateMeta):
 
-    def __init__(self, status: StateType=StateType.RUNNING, name: str=''):
+    def __init__(self, status: Status, name: str=''):
         """[summary]
 
         Args:
@@ -102,7 +79,7 @@ class Discrete(State[V], metaclass=StateMeta):
         self._status = status
     
     @property
-    def status(self) -> StateType:
+    def status(self) -> Status:
         return self._status
 
     @abstractmethod
@@ -115,58 +92,6 @@ class Discrete(State[V], metaclass=StateMeta):
     
     def reset(self):
         self.enter()
-
-
-class Failure(Discrete[V]):
-
-    def __init__(self, name: str=''):
-        """
-        Args:
-            name (str, optional): [description]. Defaults to ''.
-        """
-        super().__init__(StateType.FAILURE, name)
-
-    def update(self):
-        return Emission(self)
-
-
-class Success(Discrete[V]):
-
-    def __init__(self, name: str=''):
-        """
-        Args:
-            name (str, optional): [description]. Defaults to ''.
-        """
-        super().__init__(StateType.SUCCESS, name)
-
-    def update(self):
-        return Emission(self)
-
-
-class Start(Discrete[V]):
-
-    def __init__(self, name: str=''):
-        """
-        Args:
-            name (str, optional): [description]. Defaults to ''.
-        """
-        super().__init__(StateType.READY, name)
-
-    def update(self):
-        raise NotImplementedError
-
-
-class Running(Discrete[V]):
-
-    def __init__(self, name: str=''):
-        """
-        Args:
-            name (str, optional): [description]. Defaults to ''.
-        """
-        super().__init__(StateType.READY, name)
-
-    def update(self):
-        raise NotImplementedError
 
 
 class StateRef(object):
@@ -183,20 +108,14 @@ class StateRef(object):
 StateVar = typing.Union[State, StateRef]
 
 
+@dataclass
 class Emission(Generic[V]):
     """
     Emission of a state. An emission consists of the next state and the
     value emitted
     """
-
-    def __init__(self, next_state: StateVar, value: V=None):
-        """
-        Args:
-            next_state (StateVar): Next state to execute
-            value (V, optional): Value fo the emission. Defaults to None.
-        """
-        self._next_state = next_state
-        self._value = value
+    next_state: StateVar
+    value: V
     
     def emit(self, states: typing.Dict[str, State]=None):
         """Emit the result 
@@ -209,12 +128,12 @@ class Emission(Generic[V]):
         """
         states = states or {}
 
-        if isinstance(self._next_state, StateRef):
-            state = self._next_state.lookup(states)
+        if isinstance(self.next_state, StateRef):
+            state = self.next_state.lookup(states)
         else:
-            state = self._next_state
+            state = self.next_state
         state.enter()
-        return state, self._value
+        return Emission(state, self.value, self.status)
 
 
 # TODO: Decide whether this is needed
@@ -322,7 +241,7 @@ class FSM(StateMachine):
     def __pre_init__(self, start: Discrete, states: typing.Dict[str, Discrete], store: Storage, reference):
 
         super().__pre_init__(start, states, store, reference)
-        self._cur_state = self._start
+        self._cur_state: Discrete = self._start
         self._cur_state.reset()
     
     def __init__(self, name: str=''):
@@ -336,19 +255,13 @@ class FSM(StateMachine):
 
     def tick(self):
 
-        emission = self._cur_state.update()
-        next_state, value = emission.emit(self._states)
-        if next_state.status.final:
-            self._cur_state = next_state
-            if self._cur_state.status == StateType.SUCCESS:
-                return Status.SUCCESS
-            elif self._cur_state.status == StateType.FAILURE:
-                return Status.FAILURE
-        elif next_state != self._cur_state:
-            self._cur_state = next_state
+        emission = self._cur_state.update().emit(self._states)
+        self._cur_state = emission.next_state
+    
+        if emission.next_state != self._cur_state:
             self._cur_state.reset()
 
-        return Status.RUNNING
+        return self._cur_state.status
 
     @property
     def cur_state(self):
@@ -356,7 +269,7 @@ class FSM(StateMachine):
 
     @property
     def status(self) -> Status:
-        return self._cur_state.status.status
+        return self._cur_state.status
 
 
 class FSMState(Discrete):
