@@ -30,7 +30,7 @@ from enum import Enum
 import typing
 from functools import singledispatch, singledispatchmethod
 from typing import Any, Iterator
-from .vars import STORE_REF, Args, Const, ConstShared, Ref, Shared, Storage, Store, Var, UNDEFINED
+from .vars import STORE_REF, Args, Ref, Shared, Storage, Store, Var, UNDEFINED
 from .utils import coalesce
 import random
 from functools import wraps
@@ -144,8 +144,6 @@ class VarStorer(object):
 
     @singledispatchmethod
     def __call__(self, val):
-        if isinstance(val, Const):
-            raise ValueError('Cannot convert constant to var')
         self._val = Var(val)
         return self
 
@@ -555,7 +553,6 @@ class Loader(object):
 
         self._cls = cls
         self._args = args or Args()
-        self.decorator: DecoratorLoader = None
     
     def load(self, storage: Storage, name: str='', reference=None):
         storage = Storage(parent=storage)
@@ -568,14 +565,23 @@ class Loader(object):
         if reference is not None and not isinstance(self._cls, Tree):
             kwargs['reference'] = reference
 
-        print(isinstance(self._cls, Task), self._cls, *args.kwargs.values())
         item = self._cls(
             store=storage, name=name, *args.args, **args.kwargs, **kwargs
         )
-        if self.decorator is not None:
-            item = self.decorator.decorate(item)
         return item
-    
+
+    def __call__(self, cls: typing.Type):
+        self._cls = cls
+        return self
+
+
+class TaskLoader(Loader):
+
+    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None):
+
+        super().__init__(cls, args)
+        self.decorator: DecoratorLoader = None
+
     def add_decorator(self, decorator, prepend=True):
 
         if self.decorator is None:
@@ -584,21 +590,18 @@ class Loader(object):
             self.decorator = self.decorator.prepend(decorator)
         else:
             self.decorator = self.decorator.append(decorator)
+    
+    def load(self, storage: Storage, name: str='', reference=None):
 
-    def __call__(self, cls: typing.Type):
-        self._cls = cls
-        return self
+        task = super().load(storage, name, reference)
+        if self.decorator is not None:
+            task = self.decorator.decorate(task)
+        return task
 
     def __lshift__(self, decorator: DecoratorLoader):
 
         self.add_decorator(decorator)
         return self
-
-
-# TODO: Decide how to use the task loader
-class TaskLoader(Loader):
-
-    pass
 
 
 def task(cls: typing.Type[Task]):
@@ -1031,8 +1034,6 @@ class fail_on_first(TickDecorator):
 
 
 class MemberRef(object):
-    """Mixin for 'Reference' tasks. 'Reference' tasks call the 'Reference' object
-    """
 
     def __init__(self, member: str, args: Args, store: Store, reference):
 
@@ -1041,22 +1042,21 @@ class MemberRef(object):
         self._store = store
         self._reference = reference
 
-    @classmethod
-    def _process_ref_arg(cls, arg, store):
+    def _process_ref_arg(self, arg):
 
         if isinstance(arg, Ref):
-            return arg.shared(store).val
+            return arg.shared(self._store).val
 
         elif arg == STORE_REF:
-            return store
+            return self._store
         
         return arg
 
-    def _process_ref_args(self, args: Args, store):
+    def _process_ref_args(self):
 
         return Args(
-            *[self._process_ref_arg(arg, store) for arg in args.args],
-            **{k: self._process_ref_arg(arg, store) for k, arg in args.kwargs.items()}
+            *[self._process_ref_arg(arg, self._store) for arg in self._args.args],
+            **{k: self._process_ref_arg(arg, self._store) for k, arg in self._args.kwargs.items()}
         )
     
     def execute(self):
@@ -1078,7 +1078,7 @@ class MemberRefFactory(object):
 
         if reference is None:
             raise ValueError('Reference object must be defined to create an ActionReference')
-        args = self._args.update_refs(self._store)
+        args = self._args.update_refs(store)
         return MemberRef(self._member, args, store, reference)
 
 

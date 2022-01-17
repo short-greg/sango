@@ -67,7 +67,7 @@ class State(Generic[V], metaclass=StateMeta):
 
 class Discrete(State[V], metaclass=StateMeta):
 
-    def __init__(self, status: Status, name: str=''):
+    def __init__(self, name: str=''):
         """[summary]
 
         Args:
@@ -76,11 +76,10 @@ class Discrete(State[V], metaclass=StateMeta):
             name (str, optional): Name of the state. Defaults to ''.
         """
         self._name = name
-        self._status = status
     
     @property
     def status(self) -> Status:
-        return self._status
+        raise NotImplementedError
 
     @abstractmethod
     def update(self) -> Emission:
@@ -92,6 +91,60 @@ class Discrete(State[V], metaclass=StateMeta):
     
     def reset(self):
         self.enter()
+
+
+class Running(Discrete[V]):
+
+    @property
+    def status(self) -> Status:
+        return Status.RUNNING
+
+
+class Start(Discrete[V]):
+
+    @property
+    def status(self) -> Status:
+        return Status.READY
+
+
+class Failure(Discrete[V]):
+
+    @property
+    def status(self) -> Status:
+        return Status.FAILURE
+    
+    @abstractmethod
+    def emit_value(self):
+        raise NotImplementedError
+
+    def update(self) -> Emission:
+        return Emission(self, self.emit_value())
+
+
+class Success(Discrete[V]):
+
+    @property
+    def status(self) -> Status:
+        return Status.SUCCESS
+
+    @abstractmethod
+    def emit_value(self):
+        raise NotImplementedError
+    
+    def update(self) -> Emission:
+        return Emission(self, self.emit_value())
+
+
+# Add this in to refer to states
+# class RefState(object):
+
+#     def __init__(self, ref: str):
+
+#         self._ref = ref
+
+#     def lookup(self, states: typing.Dict[str, State]):
+
+#         return states[self._ref]
 
 
 class StateRef(object):
@@ -115,7 +168,7 @@ class Emission(Generic[V]):
     value emitted
     """
     next_state: StateVar
-    value: V
+    value: V=None
     
     def emit(self, states: typing.Dict[str, State]=None):
         """Emit the result 
@@ -133,12 +186,15 @@ class Emission(Generic[V]):
         else:
             state = self.next_state
         state.enter()
-        return Emission(state, self.value, self.status)
+        return Emission(state, self.value)
 
 
-# TODO: Decide whether this is needed
 class StateLoader(Loader):
-    pass
+     
+    # TODO: add in state decorators later
+    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None):
+
+        super().__init__(cls, args)
 
 
 class StateMachineMeta(TaskMeta):
@@ -181,10 +237,6 @@ class StateMachine(Task, metaclass=StateMachineMeta):
         raise NotImplementedError
 
 
-def decorate(state_loader: StateLoader, decorators):
-    state_loader.add_decorators(decorators)
-
-
 class TaskState(Discrete):
     
     def __init__(self, task: Task, failure_to: StateVar, success_to: StateVar):
@@ -211,13 +263,13 @@ class TaskState(Discrete):
         return self
 
 
-class TaskStateLoader(object):
+class TaskStateLoader(StateLoader):
 
-    def __init__(self, task_loader: TaskLoader, failure_to: StateVar, success_to: StateVar, decorators=None):
+    def __init__(self, task_loader: TaskLoader, failure_to: StateVar, success_to: StateVar):
 
         def load(store, name, *args, **kwargs):
             return TaskState(task_loader.load(store, name, *args, **kwargs), failure_to, success_to)
-        super().__init__(load, decorators=decorators)
+        super().__init__(load)
 
     def __call__(self, state: State):
         self._state = state
@@ -238,6 +290,7 @@ def state(*args, **kwargs):
 
 class FSM(StateMachine):
 
+    # TODO: check status of start state and final states
     def __pre_init__(self, start: Discrete, states: typing.Dict[str, Discrete], store: Storage, reference):
 
         super().__pre_init__(start, states, store, reference)

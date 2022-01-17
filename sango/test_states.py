@@ -1,36 +1,35 @@
-from sango.nodes import Status, Tree, task, var
+from sango.nodes import Status, Tree, task, var_
 from sango.vars import Args, Ref, Var
-from .states import FSM, Discrete, Emission, StateRef, StateType, StateVar, state, state_
+from .states import FSM, Discrete, Emission, Failure, Running, StateRef, StateVar, Success, state, state_
 
 
-class SimpleState(Discrete[None]):
+class SimpleState(Running[None]):
 
     def update(self) -> Emission[None]:
         return Emission(self)
 
 
-class EmissionState(Discrete[float]):
+class EmissionState(Running[float]):
 
     def update(self) -> Emission[float]:
         return Emission(self, 2)
 
 
-class FloatState2(Discrete[float]):
+class FloatState2(Running[float]):
 
-    x = var(3.)
+    x = var_(3.)
 
     def update(self) -> Emission[float]:
         return Emission(self, self.x.val)
 
 
-class FloatState3(Discrete[float]):
+class FloatState3(Running[float]):
     
-    x = var(3.)
+    x = var_(3.)
 
-    def __init__(self, next_state: StateVar, status: StateType=StateType.RUNNING, name: str=''):
+    def __init__(self, next_state: StateVar, name: str=''):
         self._next_state = next_state
         self._name = name
-        self._status = status
 
     def update(self) -> Emission[float]:
         self.x.val += 1
@@ -45,21 +44,21 @@ class TestEmission:
 
     def test_next_state_is_correct(self):
 
-        state = SimpleState(status=StateType.RUNNING)
-        next_state, value = Emission[None](state).emit()
-        assert next_state == state
+        state = SimpleState()
+        emission = Emission[None](state).emit()
+        assert emission.next_state == state
 
     def test_value_is_correct(self):
 
         state = SimpleState()
-        next_state, value = Emission[None](state, None).emit()
-        assert value is None
+        emission = Emission[None](state, None).emit()
+        assert emission.value is None
 
     def test_value_when_float(self):
 
-        state = EmissionState(status=StateType.RUNNING)
-        next_state, value = Emission[float](state, 2.).emit()
-        assert value == 2.
+        state = EmissionState()
+        emission = Emission[float](state, 2.).emit()
+        assert emission.value == 2.
 
 
 class TestStateWithStore:
@@ -67,8 +66,8 @@ class TestStateWithStore:
     def test_float_emission_is_2(self):
 
         state = FloatState2(name='x')
-        _, value = state.update().emit()
-        assert value == 3.
+        emission = state.update().emit()
+        assert emission.value == 3.
 
     def test_name_is_correct(self):
         state = FloatState2(name='x')
@@ -77,23 +76,23 @@ class TestStateWithStore:
     def test_value_is_correct_after_enter(self):
         next_state = FloatState2(name='x')
         state = FloatState3(next_state, name='x')
-        next_state_, _ = state.update().emit({})
+        emission = state.update().emit({})
 
-        assert next_state_ == next_state
+        assert emission.next_state == next_state
 
     def test_status_is_correct(self):
-        next_state = FloatState2(name='x', status=StateType.SUCCESS)
+        next_state = FloatState2(name='x')
         state = FloatState3(next_state, name='first')
-        next_state_, _ = state.update().emit()
+        emission = state.update().emit()
 
-        assert next_state_ == next_state
+        assert emission.next_state == next_state
 
 
 class MachineTest(FSM):
 
     start = state_(FloatState3, next_state=StateRef('state2'))
     state2 = state_(FloatState3, next_state=StateRef('state3'))
-    state3 = state_(EmissionState, status=StateType.SUCCESS)
+    state3 = state_(EmissionState)
 
 
 class TestFSM:
@@ -118,12 +117,22 @@ class TestFSM:
         machine.reset()
         assert machine.status == Status.RUNNING
 
-class FloatState2(Discrete[float]):
 
-    x = var(3.)
+class FloatStateFailure(Failure[float]):
 
-    def update(self) -> Emission[float]:
-        return Emission(self, self.x.val)
+    x = var_(3.)
+
+    def emit_value(self) -> Emission[float]:
+        return self.x.val
+
+
+class FloatStateSuccess(Success[float]):
+
+    x = var_(3.)
+
+    def emit_value(self) -> Emission[float]:
+        return self.x.val
+
 
 class TestFSMTaskInTree:
 
@@ -132,9 +141,9 @@ class TestFSMTaskInTree:
         @task
         class entry(FSM):
 
-            start = state_(FloatState3, status=StateType.READY, next_state=StateRef('state2'))
-            state2 = state_(FloatState3, status=StateType.RUNNING, next_state=StateRef('state3'))
-            state3 = state_(EmissionState, status=StateType.SUCCESS)
+            start = state_(FloatState3, next_state=StateRef('state2'))
+            state2 = state_(FloatState3, next_state=StateRef('state3'))
+            state3 = state_(FloatStateSuccess)
 
 
     class X2(Tree):
@@ -142,9 +151,9 @@ class TestFSMTaskInTree:
         @task
         class entry(FSM):
 
-            start = state_(FloatState3, status=StateType.READY, next_state=StateRef('state2'))
-            state2 = state_(FloatState3, status=StateType.RUNNING, next_state=StateRef('state3'))
-            state3 = state_(EmissionState, status=StateType.FAILURE)
+            start = state_(FloatState3, next_state=StateRef('state2'))
+            state2 = state_(FloatState3,  next_state=StateRef('state3'))
+            state3 = state_(FloatStateFailure)
 
     def test_tree_returns_success(self):
         tree = TestFSMTaskInTree.X()

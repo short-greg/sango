@@ -556,156 +556,156 @@ class TestTreeReference:
         tree = TrialTree()
         assert tree.tick() == Status.SUCCESS
 
-    def test_trial_tree_with_condition(self):
+    # def test_trial_tree_with_condition(self):
         
-        class TrialTree(Tree):
+    #     class TrialTree(Tree):
 
-            @task
-            class entry(Sequence):
-                x = cond("x")
+    #         @task
+    #         class entry(Sequence):
+    #             x = cond("x")
 
-            def x(self):
-                return True
+    #         def x(self):
+    #             return True
             
-        tree = TrialTree()
-        assert tree.tick() == Status.SUCCESS   
+    #     tree = TrialTree()
+    #     assert tree.tick() == Status.SUCCESS   
 
-    def test_trial_tree_with_condvar(self):
+    # def test_trial_tree_with_condvar(self):
         
-        class TrialTree(Tree):
+    #     class TrialTree(Tree):
 
-            def __init__(self, name: str=''):
-                super().__init__(name)
-                self.x = True
+    #         def __init__(self, name: str=''):
+    #             super().__init__(name)
+    #             self.x = True
 
-            @task
-            class entry(Sequence):
-                x = condvar("x")
+    #         @task
+    #         class entry(Sequence):
+    #             x = condvar("x")
             
-        tree = TrialTree()
-        assert tree.tick() == Status.SUCCESS   
+    #     tree = TrialTree()
+    #     assert tree.tick() == Status.SUCCESS   
 
-    def test_trial_tree_with_sequence_depth(self):
+    # def test_trial_tree_with_sequence_depth(self):
         
-        class TrialTree(Tree):
+    #     class TrialTree(Tree):
 
-            def __init__(self, name: str=''):
-                super().__init__(name)
-                self.x = True
-                self.y = True
+    #         def __init__(self, name: str=''):
+    #             super().__init__(name)
+    #             self.x = True
+    #             self.y = True
 
-            @task
-            class entry(Sequence):
-                x = condvar("x")
+    #         @task
+    #         class entry(Sequence):
+    #             x = condvar("x")
 
-                @task
-                @neg
-                class t(Sequence):
-                    z = action('z')
-                    y = action('t')
+    #             @task
+    #             @neg
+    #             class t(Sequence):
+    #                 z = action('z')
+    #                 y = action('t')
     
-            def t(self):
-                return Status.FAILURE
+    #         def t(self):
+    #             return Status.FAILURE
         
-            def z(self):
-                print('z')
-                return Status.SUCCESS
+    #         def z(self):
+    #             print('z')
+    #             return Status.SUCCESS
             
-        tree = TrialTree()
-        tree.tick()
-        tree.tick()
-        assert tree.tick() == Status.SUCCESS   
+    #     tree = TrialTree()
+    #     tree.tick()
+    #     tree.tick()
+    #     assert tree.tick() == Status.SUCCESS   
 
-    def test_trial_tree_with_fallback_depth(self):
+    # def test_trial_tree_with_fallback_depth(self):
         
-        class TrialTree(Tree):
+    #     class TrialTree(Tree):
 
-            def __init__(self, name: str=''):
-                super().__init__(name)
-                self.x = False
+    #         def __init__(self, name: str=''):
+    #             super().__init__(name)
+    #             self.x = False
 
-            @task
-            class entry(Fallback):
-                x = condvar("x")
+    #         @task
+    #         class entry(Fallback):
+    #             x = condvar("x")
 
-                @task
-                @neg
-                class t(Fallback):
-                    z = action('t')
-                    y = action('z')
+    #             @task
+    #             @neg
+    #             class t(Fallback):
+    #                 z = action('t')
+    #                 y = action('z')
     
-            def t(self):
-                return Status.SUCCESS
+    #         def t(self):
+    #             return Status.SUCCESS
         
-            def z(self):
-                return Status.FAILURE
+    #         def z(self):
+    #             return Status.FAILURE
             
-        tree = TrialTree()
-        tree.tick()
-        status = tree.tick()
-        # negative fallback ends on first failure
-        assert status == Status.FAILURE   
+    #     tree = TrialTree()
+    #     tree.tick()
+    #     status = tree.tick()
+    #     # negative fallback ends on first failure
+    #     assert status == Status.FAILURE   
 
 
-    def test_trial_tree_with_fallback_until_depth(self):
+    # def test_trial_tree_with_fallback_until_depth(self):
         
-        class TrialTree(Tree):
+    #     class TrialTree(Tree):
 
-            def __init__(self, name: str=''):
-                super().__init__(name)
-                self.x = True
-                self._count = 0
+    #         def __init__(self, name: str=''):
+    #             super().__init__(name)
+    #             self.x = True
+    #             self._count = 0
 
-            @task
-            class entry(Sequence):
-                x = condvar("x")
+    #         @task
+    #         class entry(Sequence):
+    #             x = condvar("x")
 
-                @task
-                @until
-                class t(Sequence):
-                    z = action('t')
-                    y = action('z')
+    #             @task
+    #             @until
+    #             class t(Sequence):
+    #                 z = action('t')
+    #                 y = action('z')
     
-            def t(self):
-                if self._count < 2:
-                    self._count += 1
-                    return Status.RUNNING
-                return Status.SUCCESS
+    #         def t(self):
+    #             if self._count < 2:
+    #                 self._count += 1
+    #                 return Status.RUNNING
+    #             return Status.SUCCESS
         
-            def z(self):
-                return Status.SUCCESS
+    #         def z(self):
+    #             return Status.SUCCESS
             
-        tree = TrialTree()
-        tree.tick()
-        tree.tick()
-        tree.tick()
-        tree.tick()
-        status = tree.tick()
-        # negative fallback ends on first failure
-        assert status == Status.SUCCESS   
+    #     tree = TrialTree()
+    #     tree.tick()
+    #     tree.tick()
+    #     tree.tick()
+    #     tree.tick()
+    #     status = tree.tick()
+    #     # negative fallback ends on first failure
+    #     assert status == Status.SUCCESS   
 
-    def test_trial_tree_with_fallback_until_depth(self):
+    # def test_trial_tree_with_fallback_until_depth(self):
          
-        class TrialTree(Tree):
+    #     class TrialTree(Tree):
 
-            t = var_()
+    #         t = var_()
 
-            def __init__(self, name: str=''):
-                super().__init__(name)
-                self._count = 0
-                self.t.val = 2
+    #         def __init__(self, name: str=''):
+    #             super().__init__(name)
+    #             self._count = 0
+    #             self.t.val = 2
 
-            @task
-            class entry(Sequence):
-                x = action("x", ref_.t)
+    #         @task
+    #         class entry(Sequence):
+    #             x = action("x", ref_.t)
             
-            def x(self, t):
-                if t.val == 2:
-                    return Status.SUCCESS
-                return Status.FAILURE
+    #         def x(self, t):
+    #             if t.val == 2:
+    #                 return Status.SUCCESS
+    #             return Status.FAILURE
         
-        tree = TrialTree()
-        assert tree.tick() == Status.SUCCESS
+    #     tree = TrialTree()
+    #     assert tree.tick() == Status.SUCCESS
 
 
 class TestExternalAction:
