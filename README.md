@@ -12,6 +12,10 @@ Behavior Trees typically consist of four types of nodes
 * Conditional: A task which returns Success or Failure based on the current state of the system or environment
 * Decorator: A task which alters the status returned by another task
 
+In addition to those standard tasks
+* State Machine: A state machine can be a task in the behavior tree. This makes it possible to create complex state machines. A tree can also be a state in a state machine
+* Tree - A tree can also be a task to make the behavior tree more module.
+
 ## Diving Deeper
 
 For Sango, I aimed to have the following to make it easy to define trees.
