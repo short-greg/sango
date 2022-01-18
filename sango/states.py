@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from functools import singledispatch
 import typing
 from sango.vars import UNDEFINED, Args, Storage
-from .nodes import ClassArgFilter, Loader, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
+from .nodes import ClassArgFilter, Loader, MemberRefFactory, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 
 
@@ -135,19 +135,7 @@ class Success(Discrete[V]):
         return Emission(self, self.emit_value())
 
 
-# Add this in to refer to states
-# class RefState(object):
-
-#     def __init__(self, ref: str):
-
-#         self._ref = ref
-
-#     def lookup(self, states: typing.Dict[str, State]):
-
-#         return states[self._ref]
-
-
-class StateRef(object):
+class StateID(object):
 
     def __init__(self, ref: str):
 
@@ -158,7 +146,7 @@ class StateRef(object):
         return states[self._ref]
 
 
-StateVar = typing.Union[State, StateRef]
+StateVar = typing.Union[State, StateID]
 
 
 @dataclass
@@ -181,7 +169,7 @@ class Emission(Generic[V]):
         """
         states = states or {}
 
-        if isinstance(self.next_state, StateRef):
+        if isinstance(self.next_state, StateID):
             state = self.next_state.lookup(states)
         else:
             state = self.next_state
@@ -275,13 +263,17 @@ class TaskStateLoader(StateLoader):
         self._state = state
         return self
 
+@singledispatch
+def state_(s: typing.Union[State, TaskLoader], *args, **kwargs):
 
-def state_(cls: typing.Union[State, TaskLoader], *args, **kwargs):
-
-    if issubclass(cls, State):
-        return StateLoader(cls, Args(*args, **kwargs))
+    if issubclass(s, State):
+        return StateLoader(s, Args(*args, **kwargs))
     
-    return StateLoader(TaskStateLoader(cls))
+    return StateLoader(TaskStateLoader(s))
+
+@state_.register
+def _(s: str):
+    return StateLoader(DiscreteStateRef, args=Args(member_ref=s))
 
 
 def state(*args, **kwargs):
@@ -346,6 +338,27 @@ class FSMState(Discrete):
             return self._state_map[self._machine.cur_state.name]
 
         return self
+
+
+class DiscreteStateRef(Discrete):
+
+    def __init__(self, name: str, member_factory: MemberRefFactory):
+        super().__init__(name)
+        self._member_ref = member_factory.produce(self._store, self._reference)
+    
+    @property
+    def state(self) -> Discrete:
+        return self._member_ref.get()
+
+    def enter(self):
+        self.state.enter()
+    
+    def reset(self):
+        super().reset()
+        self.state.reset()
+    
+    def update(self):
+        return self.state.update()
 
 
 class FSMStateLoader(object):

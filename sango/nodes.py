@@ -1082,7 +1082,7 @@ class MemberRefFactory(object):
         return MemberRef(self._member, args, store, reference)
 
 
-class ActionRef(Action):
+class ActionFuncRef(Action):
     """Task that executes an action on the reference object
     """
     
@@ -1092,6 +1092,36 @@ class ActionRef(Action):
 
     def act(self):
         return self._member_ref.execute()
+
+
+class ActionRef(Action):
+    """Task that executes an action on the reference object
+    """
+    
+    def __init__(self, name: str, member_factory: MemberRefFactory):
+        super().__init__(name)
+        self._member_ref = member_factory.produce(self._store, self._reference)
+
+    def reset(self):
+        self._member_ref.get().reset()
+
+    def act(self):
+        return self._member_ref.get().act()
+
+
+class ConditionalRef(Conditional):
+    """Task that executes an action on the reference object
+    """
+    
+    def __init__(self, name: str, member_factory: MemberRefFactory):
+        super().__init__(name)
+        self._member_ref = member_factory.produce(self._store, self._reference)
+
+    def reset(self):
+        self._member_ref.get().reset()
+
+    def check(self):
+        return self._member_ref.get().check()
 
 
 class ConditionalVarRef(Conditional):
@@ -1106,7 +1136,7 @@ class ConditionalVarRef(Conditional):
         return self._member_ref.get()
 
 
-class ConditionalRef(Conditional):
+class ConditionalFuncRef(Conditional):
     """Task that retrieves a function
     """
     
@@ -1118,7 +1148,20 @@ class ConditionalRef(Conditional):
         return self._member_ref.execute()
 
 
-def action(act: str, *args, **kwargs) -> TaskLoader:
+def action(act: str) -> TaskLoader:
+    """Convenience function for creating an ActionRef
+
+    Args:
+        act (str): The name fo the actino function
+
+    Returns:
+        TaskLoader
+    """
+    factory  = MemberRefFactory(act)
+    return TaskLoader(ActionRef, args=Args(member_factory=factory))
+
+
+def actionf(act: str, *args, **kwargs) -> TaskLoader:
     """Convenience function for creating an ActionRef
 
     Args:
@@ -1129,10 +1172,26 @@ def action(act: str, *args, **kwargs) -> TaskLoader:
     """
     factory  = MemberRefFactory(act, Args(*args, **kwargs))
     return TaskLoader(
-        ActionRef, args=Args(member_factory=factory)
+        ActionFuncRef, args=Args(member_factory=factory)
     )
 
-def cond(check: str, *args, **kwargs) -> TaskLoader:
+
+def cond(check: str) -> TaskLoader:
+    """Convenience function for creating an ConditionalRef
+
+    Args:
+        act (str): The name fo the actino function
+
+    Returns:
+        TaskLoader
+    """
+    factory = MemberRefFactory(check)
+    return TaskLoader(
+        ConditionalRef, args=Args(member_factory=factory)
+    )
+
+
+def condf(check: str, *args, **kwargs) -> TaskLoader:
     """Convenience function for creating a ConditionalRef
 
     Args:
@@ -1143,7 +1202,7 @@ def cond(check: str, *args, **kwargs) -> TaskLoader:
     """
     factory  = MemberRefFactory(check, Args(*args, **kwargs))
     return TaskLoader(
-        ConditionalRef, args=Args(member_factory=factory)
+        ConditionalFuncRef, args=Args(member_factory=factory)
     )
 
 def condvar(check: str) -> TaskLoader:
