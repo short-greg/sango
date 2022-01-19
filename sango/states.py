@@ -361,13 +361,31 @@ class DiscreteStateRef(Discrete):
         return self.state.update()
 
 
-class FSMStateLoader(object):
-    def __init__(self, state_loader: StateLoader, state_map: typing.Dict[str, State], decorators=None):
+class FSMStateLoader(Loader):
+    def __init__(self, fsm_factory, map_to: typing.Dict[str, State]):
 
+        self._fsm_factory = fsm_factory
         def load(store, name, *args, **kwargs):
-            return FSMState(state_loader.load(store, name, *args, **kwargs), **state_map)
-        super().__init__(load, decorators=decorators)
 
-    def __call__(self, state: Discrete):
-        self._state = state
+            fsm = self._fsm_factory(name=name, store=store, *args, **kwargs)
+            return FSMState(
+                fsm, **map_to
+            )
+
+        super().__init__(load)
+
+    def __call__(self, fsm_factory):
+        self._fsm_factory = fsm_factory
         return self
+
+
+@singledispatch
+def fsmstate(s: typing.Type, map_to: typing.Dict[str, State], *args, **kwargs):
+
+    return FSMStateLoader(s, map_to, Args(*args, **kwargs))
+
+# TODO: need to the ability to be a reference
+# @fsmstate.register
+# def _(s: str, map_to: typing.Dict[str, State]):
+
+#     return FSMStateLoader(StateLoader())

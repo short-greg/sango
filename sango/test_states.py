@@ -1,6 +1,6 @@
 from sango.nodes import Status, Tree, task, var_
 from sango.vars import Args, Ref, Var
-from .states import FSM, Discrete, Emission, Failure, Running, StateRef, StateVar, Success, state, state_
+from .states import FSM, Discrete, Emission, Failure, Running, StateID, StateVar, Success, fsmstate, state, state_
 
 
 class SimpleState(Running[None]):
@@ -90,9 +90,23 @@ class TestStateWithStore:
 
 class MachineTest(FSM):
 
-    start = state_(FloatState3, next_state=StateRef('state2'))
-    state2 = state_(FloatState3, next_state=StateRef('state3'))
+    start = state_(FloatState3, next_state=StateID('state2'))
+    state2 = state_(FloatState3, next_state=StateID('state3'))
     state3 = state_(EmissionState)
+
+
+# TODO: Finish this.. Need improvements on hierarchical state machines
+# class HierarchicalMachineTest(FSM):
+
+#     start = state_(FloatState3, next_state=StateID('state2'))
+#     case 1: a class
+#     state2 = fsmstate(
+#           MachineTest, map_to={'state3': 'state3'}, *args, **kwargs)
+#     case 2: a ref... don't need the args or kwargs
+#     state3 = fsmstate(
+#           'machine',  map_to={''}
+#     )
+#     state3 = state_(EmissionState)
 
 
 class TestFSM:
@@ -141,8 +155,8 @@ class TestFSMTaskInTree:
         @task
         class entry(FSM):
 
-            start = state_(FloatState3, next_state=StateRef('state2'))
-            state2 = state_(FloatState3, next_state=StateRef('state3'))
+            start = state_(FloatState3, next_state=StateID('state2'))
+            state2 = state_(FloatState3, next_state=StateID('state3'))
             state3 = state_(FloatStateSuccess)
 
 
@@ -151,8 +165,8 @@ class TestFSMTaskInTree:
         @task
         class entry(FSM):
 
-            start = state_(FloatState3, next_state=StateRef('state2'))
-            state2 = state_(FloatState3,  next_state=StateRef('state3'))
+            start = state_(FloatState3, next_state=StateID('state2'))
+            state2 = state_(FloatState3,  next_state=StateID('state3'))
             state3 = state_(FloatStateFailure)
 
     def test_tree_returns_success(self):

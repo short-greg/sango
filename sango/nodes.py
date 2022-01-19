@@ -549,29 +549,29 @@ class DecoratorLoader(ABC):
 
 class Loader(object):
 
-    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None):
+    def __init__(self, factory: typing.Callable=UNDEFINED, args: Args=None):
 
-        self._cls = cls
+        self._factory = factory
         self._args = args or Args()
     
     def load(self, storage: Storage, name: str='', reference=None):
         storage = Storage(parent=storage)
         args = self._args.update_refs(storage)
 
-        if self._cls is UNDEFINED:
-            raise ValueError(f"Cls to load for {type(self).__name__} has not been defined")
+        if self._factory is UNDEFINED:
+            raise ValueError(f"Factory to load for {type(self).__name__} has not been defined")
         
         kwargs = {}
-        if reference is not None and not isinstance(self._cls, Tree):
+        if reference is not None and not isinstance(self._factory, Tree):
             kwargs['reference'] = reference
 
-        item = self._cls(
+        item = self._factory(
             store=storage, name=name, *args.args, **args.kwargs, **kwargs
         )
         return item
 
-    def __call__(self, cls: typing.Type):
-        self._cls = cls
+    def __call__(self, factory):
+        self._factory = factory
         return self
 
 
