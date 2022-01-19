@@ -1055,8 +1055,8 @@ class MemberRef(object):
     def _process_ref_args(self):
 
         return Args(
-            *[self._process_ref_arg(arg, self._store) for arg in self._args.args],
-            **{k: self._process_ref_arg(arg, self._store) for k, arg in self._args.kwargs.items()}
+            *[self._process_ref_arg(arg) for arg in self._args.args],
+            **{k: self._process_ref_arg(arg) for k, arg in self._args.kwargs.items()}
         )
     
     def execute(self):
@@ -1069,10 +1069,10 @@ class MemberRef(object):
 
 class MemberRefFactory(object):
 
-    def __init__(self, member: str, args: Args):
+    def __init__(self, member: str, args: Args=None):
 
         self._member = member
-        self._args = args
+        self._args = args if args is not None else Args()
     
     def produce(self, store: Store, reference):
 
@@ -1091,6 +1091,18 @@ class ActionFuncRef(Action):
         self._member_ref = member_factory.produce(self._store, self._reference)
 
     def act(self):
+        return self._member_ref.execute()
+
+
+class ConditionalFuncRef(Conditional):
+    """Task that retrieves a function
+    """
+    
+    def __init__(self, name: str, member_factory: MemberRefFactory):
+        super().__init__(name)
+        self._member_ref = member_factory.produce(self._store, self._reference)
+
+    def check(self):
         return self._member_ref.execute()
 
 
@@ -1135,17 +1147,6 @@ class ConditionalVarRef(Conditional):
     def check(self):
         return self._member_ref.get()
 
-
-class ConditionalFuncRef(Conditional):
-    """Task that retrieves a function
-    """
-    
-    def __init__(self, name: str, member_ref: MemberRef):
-        super().__init__(name)
-        self._member_ref = member_ref
-
-    def check(self):
-        return self._member_ref.execute()
 
 
 def action(act: str) -> TaskLoader:
