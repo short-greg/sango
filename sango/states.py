@@ -317,10 +317,16 @@ class FSM(StateMachine):
         return self._cur_state.status
 
 
+class FSMRef(FSM):
+    # TODO: Define this class
+    pass
+
+
 class FSMState(Discrete):
     
-    def __init__(self, machine: FSM, **state_map):
+    def __init__(self, name: str, machine: FSM, **state_map):
 
+        super().__init__(name)
         self._machine = machine
         self._state_map = state_map
 
@@ -362,17 +368,21 @@ class DiscreteStateRef(Discrete):
 
 
 class FSMStateLoader(Loader):
-    def __init__(self, fsm_factory, map_to: typing.Dict[str, State]):
 
+    def __init__(self, fsm_factory, map_to: typing.Dict[str, State], args: Args=None):
+
+        self._args = args or Args()
         self._fsm_factory = fsm_factory
-        def load(store, name, *args, **kwargs):
+        def load(store, name='', *args, **kwargs):
 
-            fsm = self._fsm_factory(name=name, store=store, *args, **kwargs)
+            if self._fsm_factory is None:
+                raise ValueError("The finite state machine factory has not been defined.")
+            fsm = self._fsm_factory(store=store, *args, **kwargs)
             return FSMState(
-                fsm, **map_to
+                fsm, name=name, **map_to
             )
 
-        super().__init__(load)
+        super().__init__(load, args)
 
     def __call__(self, fsm_factory):
         self._fsm_factory = fsm_factory
@@ -380,12 +390,19 @@ class FSMStateLoader(Loader):
 
 
 @singledispatch
-def fsmstate(s: typing.Type, map_to: typing.Dict[str, State], *args, **kwargs):
+def fsmstate_(s: typing.Type, map_to: typing.Dict[str, State], *args, **kwargs):
 
     return FSMStateLoader(s, map_to, Args(*args, **kwargs))
+
+
+@singledispatch
+def fsmstate(map_to: typing.Dict[str, State], *args, **kwargs):
+
+    return FSMStateLoader(None, map_to, Args(*args, **kwargs))
 
 # TODO: need to the ability to be a reference
 # @fsmstate.register
 # def _(s: str, map_to: typing.Dict[str, State]):
+#     # machine loaded must be a reference
 
 #     return FSMStateLoader(StateLoader())

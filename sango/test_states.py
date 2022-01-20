@@ -95,19 +95,6 @@ class MachineTest(FSM):
     state3 = state_(EmissionState)
 
 
-# TODO: Finish this.. Need improvements on hierarchical state machines
-# class HierarchicalMachineTest(FSM):
-
-#     start = state_(FloatState3, next_state=StateID('state2'))
-#     case 1: a class
-#     state2 = fsmstate(
-#           MachineTest, map_to={'state3': 'state3'}, *args, **kwargs)
-#     case 2: a ref... don't need the args or kwargs
-#     state3 = fsmstate(
-#           'machine',  map_to={''}
-#     )
-#     state3 = state_(EmissionState)
-
 
 class TestFSM:
 
@@ -185,3 +172,36 @@ class TestFSMTaskInTree:
         tree.tick()
         tree.tick()
         assert tree.tick() == Status.SUCCESS
+
+
+class HierarchicalMachineTest(FSM):
+
+    start = state_(FloatState3, next_state=StateID('state2'))
+    @fsmstate({'state3': 'state3'})
+    class SubStateMachine(FSM):
+        start = state_(FloatState3, next_state=StateID('state3'))
+        state3 = state_(EmissionState)
+    state3 = state_(EmissionState)
+
+
+class TestHierarchicalFSM:
+
+    def test_basic_machine_start_state_is_correct(self):
+        machine = HierarchicalMachineTest('tester')
+        assert machine.cur_state.name == "start"
+
+    # def test_basic_machine_next_status_is_correct(self):
+    #     machine = HierarchicalMachineTest('tester')
+    #     status = machine.tick()
+    #     assert status == Status.RUNNING
+
+    # def test_basic_machine_next_state_is_correct(self):
+    #     machine = MachineTest('tester')
+    #     machine.tick()
+    #     assert machine.cur_state.name == 'state2'
+
+    # def test_basic_machine_reset_is_correct(self):
+    #     machine = MachineTest('tester')
+    #     machine.tick()
+    #     machine.reset()
+    #     assert machine.status == Status.RUNNING

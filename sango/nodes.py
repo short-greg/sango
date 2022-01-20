@@ -912,6 +912,7 @@ class TaskDecoratorLoader(AtomicDecoratorLoader):
     def decorate(self, item):
         return self._decorator_cls(self._name, item, *self._args.args, **self._args.kwargs)
 
+
 @singledispatch
 def decorate(decorator: typing.Type[TaskDecorator], *args, **kwargs):
 
