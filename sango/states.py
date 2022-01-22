@@ -332,7 +332,7 @@ class StateLink(object):
 
         self._state_map = state_map
 
-    def eval(self, state: State):
+    def __getitem__(self, state: State):
         return self._state_map[state.name]
 
 
@@ -355,7 +355,7 @@ class FSMState(Discrete):
 
         result = self._machine.tick()
         if result.done:
-            return self.state_link.eval(self._machine.cur_state.name)
+            return self.state_link[self._machine.cur_state]
 
         return self
 
@@ -425,7 +425,7 @@ def to_status(failure: typing.Optional[str] = None, success: typing.Optional[str
     return _
 
 
-LinkFunc = typing.Callable[[typing.List[Discrete]]]
+LinkFunc = typing.Callable[[typing.List[Discrete]], StateLink]
 
 
 class FSMStateLoader(Loader):

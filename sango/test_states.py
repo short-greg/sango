@@ -1,6 +1,6 @@
 from sango.nodes import Status, Tree, task, var_
 from sango.vars import Args, Ref, Var
-from .states import FSM, Discrete, Emission, Failure, Running, StateID, StateVar, Success, fsmstate, state, state_
+from .states import FSM, Discrete, Emission, Failure, Running, StateID, StateVar, Success, fsmstate, state, state_, to_state
 
 
 class SimpleState(Running[None]):
@@ -177,11 +177,29 @@ class TestFSMTaskInTree:
 class HierarchicalMachineTest(FSM):
 
     start = state_(FloatState3, next_state=StateID('state2'))
-    @fsmstate({'state3': 'state3'})
+    @fsmstate(to_state(state3='state3'))
     class SubStateMachine(FSM):
         start = state_(FloatState3, next_state=StateID('state3'))
         state3 = state_(EmissionState)
     state3 = state_(EmissionState)
+
+
+class TestStateLink:
+
+    def test_get_item_returns_correct_item(self):
+        pass
+
+    def test_to_status_maps_to_correct_state(self):
+        pass
+
+    def test_to_state_maps_to_correct_state(self):
+        pass
+
+    def test_to_state_raises_exception_if_state_not_final(self):
+        pass
+
+    def test_to_state_raises_exception_if_state_invalid(self):
+        pass
 
 
 class TestHierarchicalFSM:
