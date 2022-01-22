@@ -4,7 +4,7 @@ makes it possible to build more complex state machines, such as
 ones that execute in parallel or ones that are pause the execution of others
 """
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import singledispatch
 import typing
@@ -292,6 +292,10 @@ class FSM(StateMachine):
     def __init__(self, name: str=''):
         
         self._name = name
+
+    @property
+    def states(self):
+        return [self._start] + [*self._states]
     
     def reset(self):
         
@@ -322,13 +326,23 @@ class FSMRef(FSM):
     pass
 
 
+class StateLink(object):
+
+    def __init__(self, **state_map: typing.Dict[str, str]):
+
+        self._state_map = state_map
+
+    def eval(self, state: State):
+        return self._state_map[state.name]
+
+
 class FSMState(Discrete):
     
-    def __init__(self, name: str, machine: FSM, **state_map):
+    def __init__(self, name: str, machine: FSM, state_link: StateLink):
 
         super().__init__(name)
         self._machine = machine
-        self._state_map = state_map
+        self._state_link = state_link
 
     def enter(self):
 
@@ -341,7 +355,7 @@ class FSMState(Discrete):
 
         result = self._machine.tick()
         if result.done:
-            return self._state_map[self._machine.cur_state.name]
+            return self.state_link.eval(self._machine.cur_state.name)
 
         return self
 
@@ -367,9 +381,56 @@ class DiscreteStateRef(Discrete):
         return self.state.update()
 
 
+def to_state(**state_map: typing.Dict[str, str]):
+    
+    def _(states: typing.List[State]):
+
+        _state_map: typing.Dict[Discrete, str] = {}
+        
+        for state in states:
+            if state.name in state_map:
+                if not state.status.done:
+                    raise ValueError(f"State {state.name} is not a final state.")
+            elif state.status.done:
+                    raise ValueError(
+                        f"State {state.name} is a final state" 
+                        "but does not map to another state."
+                    )
+
+        return StateLink(**_state_map)
+    return _
+
+
+def to_status(failure: typing.Optional[str] = None, success: typing.Optional[str]=None):
+
+    def _(states: typing.List[State]):
+
+        _state_map: typing.Dict[Discrete, str] = {}
+        
+        for state in states:
+            if state.status == Status.FAILURE:
+                if failure is None:
+                    raise ValueError(
+                        f"There is a failure state but no mapping for success"
+                    )
+                _state_map[state.name] = failure
+            elif state.status == Status.SUCCESS:
+                _state_map[state.name] = success
+        
+                if success is None:
+                    raise ValueError(
+                        f"There is a success state but no mapping for success"
+                    )
+        return StateLink(**_state_map)
+    return _
+
+
+LinkFunc = typing.Callable[[typing.List[Discrete]]]
+
+
 class FSMStateLoader(Loader):
 
-    def __init__(self, fsm_factory, map_to: typing.Dict[str, State], args: Args=None):
+    def __init__(self, fsm_factory, link_f: LinkFunc, args: Args=None):
 
         self._args = args or Args()
         self._fsm_factory = fsm_factory
@@ -377,9 +438,10 @@ class FSMStateLoader(Loader):
 
             if self._fsm_factory is None:
                 raise ValueError("The finite state machine factory has not been defined.")
-            fsm = self._fsm_factory(store=store, *args, **kwargs)
+            fsm: FSM = self._fsm_factory(store=store, *args, **kwargs)
+            
             return FSMState(
-                fsm, name=name, **map_to
+                fsm, name=name, state_link=link_f(*fsm.states)
             )
 
         super().__init__(load, args)
@@ -399,10 +461,3 @@ def fsmstate_(s: typing.Type, map_to: typing.Dict[str, State], *args, **kwargs):
 def fsmstate(map_to: typing.Dict[str, State], *args, **kwargs):
 
     return FSMStateLoader(None, map_to, Args(*args, **kwargs))
-
-# TODO: need to the ability to be a reference
-# @fsmstate.register
-# def _(s: str, map_to: typing.Dict[str, State]):
-#     # machine loaded must be a reference
-
-#     return FSMStateLoader(StateLoader())
