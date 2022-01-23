@@ -143,8 +143,13 @@ class StateID(object):
 
     def lookup(self, states: typing.Dict[str, State]):
 
-        return states[self._ref]
-
+        try: 
+            return states[self._ref]
+        except KeyError:
+            raise KeyError(
+                f"State {self._ref} not in states in"
+                f"argument states {list(states.keys())}"
+            )
 
 StateVar = typing.Union[State, StateID]
 
@@ -295,7 +300,7 @@ class FSM(StateMachine):
 
     @property
     def states(self):
-        return [self._start] + [*self._states]
+        return [self._start] + [*self._states.values()]
     
     def reset(self):
         
@@ -306,7 +311,7 @@ class FSM(StateMachine):
 
         emission = self._cur_state.update().emit(self._states)
         self._cur_state = emission.next_state
-    
+
         if emission.next_state != self._cur_state:
             self._cur_state.reset()
 
@@ -332,8 +337,8 @@ class StateLink(object):
 
         self._state_map = state_map
 
-    def __getitem__(self, state: State):
-        return self._state_map[state.name]
+    def __getitem__(self, state: State) -> str:
+        return StateID(self._state_map[state.name])
 
 
 class FSMState(Discrete):
@@ -354,10 +359,15 @@ class FSMState(Discrete):
             return None
 
         result = self._machine.tick()
+        # TODO: Determine what to use for emission
         if result.done:
-            return self.state_link[self._machine.cur_state]
+            return Emission(self._state_link[self._machine.cur_state], None)
 
-        return self
+        return Emission(self, None)
+
+    @property
+    def status(self):
+        return self._machine.status
 
 
 class DiscreteStateRef(Discrete):
@@ -385,19 +395,20 @@ def to_state(**state_map: typing.Dict[str, str]):
     
     def _(states: typing.List[State]):
 
-        _state_map: typing.Dict[Discrete, str] = {}
+        # _state_map: typing.Dict[Discrete, str] = {}
         
         for state in states:
             if state.name in state_map:
                 if not state.status.done:
                     raise ValueError(f"State {state.name} is not a final state.")
+                # _state_map[state.name] = state_map[state.name]
             elif state.status.done:
                     raise ValueError(
                         f"State {state.name} is a final state" 
                         "but does not map to another state."
                     )
-
-        return StateLink(**_state_map)
+                    
+        return StateLink(**state_map)
     return _
 
 
@@ -428,7 +439,7 @@ def to_status(failure: typing.Optional[str] = None, success: typing.Optional[str
 LinkFunc = typing.Callable[[typing.List[Discrete]], StateLink]
 
 
-class FSMStateLoader(Loader):
+class FSMStateLoader(StateLoader):
 
     def __init__(self, fsm_factory, link_f: LinkFunc, args: Args=None):
 
@@ -441,7 +452,7 @@ class FSMStateLoader(Loader):
             fsm: FSM = self._fsm_factory(store=store, *args, **kwargs)
             
             return FSMState(
-                fsm, name=name, state_link=link_f(*fsm.states)
+                name=name, machine=fsm, state_link=link_f(fsm.states)
             )
 
         super().__init__(load, args)
