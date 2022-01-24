@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from functools import singledispatch
 import typing
 from sango.vars import UNDEFINED, Args, Storage
-from .nodes import ClassArgFilter, Loader, MemberRefFactory, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
+from .nodes import ClassArgFilter, Loader, MemberRef, MemberRefFactory, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 
 
@@ -480,7 +480,23 @@ def fsmstate(map_to: typing.Dict[str, State], *args, **kwargs):
     return FSMStateLoader(None, map_to, Args(*args, **kwargs))
 
 
-# TODO: Determine if this is necessary
-# What are the use cases?
 class FSMRef(FSM):
-    pass
+
+    def __init__(self, name: str, member_ref: MemberRef):
+        super().__init__(name)
+        self._member_ref = member_ref
+
+    def enter(self):
+        self._member_ref.get().enter()
+
+    def reset(self):
+
+        self._member_ref.get().reset()
+
+    def update(self):
+
+        return self._member_ref.get().update()
+
+    @property
+    def status(self):
+        return self._member_ref.get().status
