@@ -1,6 +1,7 @@
+import pytest
 from sango.nodes import Status, Tree, task, var_
 from sango.vars import Args, Ref, Var
-from .states import FSM, Discrete, Emission, Failure, Running, StateID, StateVar, Success, fsmstate, state, state_, to_state, to_status
+from .states import FSM, Discrete, Emission, Failure, Running, StateID, StateLink, StateVar, Success, fsmstate, state, state_, to_state, to_status
 
 
 class SimpleState(Running[None]):
@@ -193,22 +194,33 @@ class HierarchicaStatusMachineTest(FSM):
     state4 = state_(EmissionState)
 
 
+
 class TestStateLink:
 
     def test_get_item_returns_correct_item(self):
-        pass
+        state = EmissionState('x')
+        link = to_state(x='y')([state])
+        assert link[state].ref == 'y'
 
     def test_to_status_maps_to_correct_state(self):
-        pass
-
-    def test_to_state_maps_to_correct_state(self):
-        pass
+        state = EmissionState('x')
+        link = to_status(failure='y')([state])
+        assert link[state].ref == 'y'
 
     def test_to_state_raises_exception_if_state_not_final(self):
-        pass
+        state = FloatState2("x")
+        with pytest.raises(ValueError):
+            to_state(x='y')([state])
 
     def test_to_state_raises_exception_if_state_invalid(self):
-        pass
+        state = FloatState2("z")
+        with pytest.raises(ValueError):
+            to_state(x='y')([state])
+
+    def test_to_status_raises_exception_if_not_defined(self):
+        state = EmissionState("z")
+        with pytest.raises(ValueError):
+            to_status(success='y')([state])
 
 
 class TestHierarchicalFSM:

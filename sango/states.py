@@ -140,6 +140,10 @@ class StateID(object):
     def __init__(self, ref: str):
 
         self._ref = ref
+    
+    @property
+    def ref(self):
+        return self._ref
 
     def lookup(self, states: typing.Dict[str, State]):
 
@@ -326,11 +330,6 @@ class FSM(StateMachine):
         return self._cur_state.status
 
 
-class FSMRef(FSM):
-    # TODO: Define this class
-    pass
-
-
 class StateLink(object):
 
     def __init__(self, **state_map: typing.Dict[str, str]):
@@ -395,7 +394,7 @@ def to_state(**state_map: typing.Dict[str, str]):
     
     def _(states: typing.List[State]):
 
-        # _state_map: typing.Dict[Discrete, str] = {}
+        _states = set()
         
         for state in states:
             if state.name in state_map:
@@ -407,7 +406,14 @@ def to_state(**state_map: typing.Dict[str, str]):
                         f"State {state.name} is a final state" 
                         "but does not map to another state."
                     )
-                    
+            _states.add(state.name)
+
+        difference = set(state_map.keys()).difference(_states)
+        if len(difference) > 0:
+            raise ValueError(
+                f"Mapping is not defined for {difference}"
+            )
+
         return StateLink(**state_map)
     return _
 
@@ -472,3 +478,9 @@ def fsmstate_(s: typing.Type, map_to: typing.Dict[str, State], *args, **kwargs):
 def fsmstate(map_to: typing.Dict[str, State], *args, **kwargs):
 
     return FSMStateLoader(None, map_to, Args(*args, **kwargs))
+
+
+# TODO: Determine if this is necessary
+# What are the use cases?
+class FSMRef(FSM):
+    pass
