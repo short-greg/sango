@@ -153,7 +153,7 @@ class VarStorer(object):
         return self
 
     @__call__.register
-    def _(self, val: Var):
+    def _(self, val: Store):
         self._val = val
         return self
 
