@@ -1138,6 +1138,7 @@ class ConditionalRef(Conditional):
         return self._member_ref.get().check()
 
 
+
 class ConditionalVarRef(Conditional):
     """Task that retrieves a boolean variable
     """
@@ -1149,6 +1150,30 @@ class ConditionalVarRef(Conditional):
     def check(self):
         return self._member_ref.get()
 
+
+
+class ActionFunc(Action):
+    
+    def __init__(self, name: str, f: typing.Callable, args: Args):
+        super().__init__(name)
+        self._f = f
+        self._args = args
+    
+    def act(self):
+        return self._f(*self._args.args, **self._args.kwargs)
+
+
+class ConditionalFunc(Conditional):
+    """Task that executes an action on the reference object
+    """
+    
+    def __init__(self, name: str, f: typing.Callable, args: Args):
+        super().__init__(name)
+        self._f = f
+        self._args = args
+
+    def check(self):
+        return self._f(*self._args.args, **self._args.kwargs)
 
 
 def action(act: str) -> TaskLoader:
@@ -1164,7 +1189,14 @@ def action(act: str) -> TaskLoader:
     return TaskLoader(ActionRef, args=Args(member_factory=factory))
 
 
-def actionf(act: str, *args, **kwargs) -> TaskLoader:
+@singledispatch
+def actionf(act, *args, **kwargs) -> TaskLoader:
+    args = Args(*args, **kwargs)
+    return TaskLoader(ActionFunc, args=Args(f=act, args=args))
+
+
+@actionf.register
+def _(act: str, *args, **kwargs) -> TaskLoader:
     """Convenience function for creating an ActionRef
 
     Args:
@@ -1194,7 +1226,14 @@ def cond(check: str) -> TaskLoader:
     )
 
 
-def condf(check: str, *args, **kwargs) -> TaskLoader:
+@singledispatch
+def condf(check, *args, **kwargs) -> TaskLoader:
+    args = Args(*args, **kwargs)
+    return TaskLoader(ConditionalFunc, args=Args(f=check, args=args))
+
+
+@condf.register
+def _(check: str, *args, **kwargs) -> TaskLoader:
     """Convenience function for creating a ConditionalRef
 
     Args:
@@ -1269,6 +1308,22 @@ def loads_(decorator, *args, **kwargs):
     raise ValueError
 
 
+def print_fail(*args) -> Status:
+    print(*args)
+    return Status.FAILURE
+
+
+def print_success(*args) -> Status:
+    print(*args)
+    return Status.SUCCESS
+
+
+# TODO: add ability to use lambad specifying the 
+# return value
+# 
+
+
+# TODO: Add action decorator for printing out etc
 
 # class TaskRefDecorator(TaskDecorator):
 #     """Decorator that uses a reference function. The reference function
