@@ -73,14 +73,14 @@ class Shared(Store[T]):
     @property
     def val(self):
         return self._var.val
-    
-    @property
-    def var(self):
-        return self._var
 
     @val.setter
     def val(self, val) -> T:
         self._var.val = val
+    
+    @property
+    def var(self):
+        return self._var
 
     def is_empty(self):
         return self._var.is_empty()

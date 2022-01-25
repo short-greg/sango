@@ -657,7 +657,6 @@ class Fallback(Composite):
             return Status.NONE
         
         status = self._planner.cur.tick()
-        print('Fallback: ', status, self._planner.cur)
         if status == Status.SUCCESS:
             return Status.SUCCESS
         
@@ -988,7 +987,6 @@ class until(TickDecorator):
         tick = node.tick
         def _(*args, **kwargs):
             status = tick(*args, **kwargs)
-            print(status)
             if status == Status.SUCCESS:
                 return status
             elif status == Status.FAILURE:
