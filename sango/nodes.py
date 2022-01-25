@@ -488,6 +488,9 @@ class Tree(Task, metaclass=TreeMeta):
     
     def tick(self) -> Status:        
         return self.entry.tick()
+    
+    def reset(self):
+        return self.entry.reset()
 
 
 class Action(Atomic):

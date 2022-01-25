@@ -82,6 +82,7 @@ class Shared(Store[T]):
     def var(self):
         return self._var
 
+
     def is_empty(self):
         return self._var.is_empty()
 
