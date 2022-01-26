@@ -29,7 +29,7 @@ from abc import ABC, abstractmethod, abstractproperty
 from enum import Enum
 import typing
 from functools import singledispatch, singledispatchmethod
-from typing import Any, Iterator
+from typing import Any, Generic, Iterator, TypeVar
 from .vars import STORE_REF, Args, Ref, Shared, Storage, Store, Var, UNDEFINED
 from .utils import coalesce
 import random
@@ -127,11 +127,14 @@ class ClassArgFilter(object):
         return result_kwargs
 
 
-class VarStorer(object):
+T = TypeVar('T')
+
+
+class VarStorer(Generic[T]):
     """Used to specify which variables are stored
     """
 
-    def __init__(self, val):
+    def __init__(self, val=UNDEFINED):
 
         if isinstance(val, Store):
             self._val = val
@@ -158,10 +161,12 @@ class VarStorer(object):
         return self
 
 
-def var_(val=UNDEFINED):    
-    """Convenience function to create a VarStorer
-    """
-    return VarStorer(val)
+var_ = VarStorer
+
+# def var_(val=UNDEFINED):    
+#     """Convenience function to create a VarStorer
+#     """
+#     return VarStorer(val)
 
 
 def ref_is_external(task_cls, default=True):
