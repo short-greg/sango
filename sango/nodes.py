@@ -1112,15 +1112,19 @@ class ActionRef(Action):
     """Task that executes an action on the reference object
     """
     
-    def __init__(self, name: str, member_factory: MemberRefFactory):
+    def __init__(self, name: str, member_factory: MemberRefFactory, status_override: Status=None):
         super().__init__(name)
         self._member_ref = member_factory.produce(self._store, self._reference)
+        self._status_override = status_override
 
     def reset(self):
         self._member_ref.get().reset()
 
     def act(self):
-        return self._member_ref.get().act()
+        res = self._member_ref.get().act()
+        if self._status_override is not None:
+            return self._status_override
+        return res
 
 
 class ConditionalRef(Conditional):
@@ -1138,7 +1142,6 @@ class ConditionalRef(Conditional):
         return self._member_ref.get().check()
 
 
-
 class ConditionalVarRef(Conditional):
     """Task that retrieves a boolean variable
     """
@@ -1151,16 +1154,19 @@ class ConditionalVarRef(Conditional):
         return self._member_ref.get()
 
 
-
 class ActionFunc(Action):
     
-    def __init__(self, name: str, f: typing.Callable, args: Args):
+    def __init__(self, name: str, f: typing.Callable, args: Args, status_override: Status=None):
         super().__init__(name)
         self._f = f
         self._args = args
+        self._status_override = status_override
     
     def act(self):
-        return self._f(*self._args.args, **self._args.kwargs)
+        res = self._f(*self._args.args, **self._args.kwargs)
+        if self._status_override is not None:
+            return self._status_override
+        return res
 
 
 class ConditionalFunc(Conditional):
@@ -1208,6 +1214,33 @@ def _(act: str, *args, **kwargs) -> TaskLoader:
     factory  = MemberRefFactory(act, Args(*args, **kwargs))
     return TaskLoader(
         ActionFuncRef, args=Args(member_factory=factory)
+    )
+
+
+@singledispatch
+def success(act, *args, **kwargs):
+
+    args = Args(*args, **kwargs)
+    return TaskLoader(ActionFunc, args=Args(f=act, args=args, status_override=Status.SUCCESS))
+
+@success.register
+def _(act: str, *args, **kwargs):
+    factory  = MemberRefFactory(act, Args(*args, **kwargs))
+    return TaskLoader(
+        ActionFuncRef, args=Args(member_factory=factory, status_override=Status.SUCCESS)
+    )
+
+@singledispatch
+def failure(act, *args, **kwargs):
+    args = Args(*args, **kwargs)
+    return TaskLoader(ActionFunc, args=Args(f=act, args=args, status_override=Status.FAILURE))
+
+
+@failure.register
+def _(act: str, *args, **kwargs):
+    factory  = MemberRefFactory(act, Args(*args, **kwargs))
+    return TaskLoader(
+        ActionFuncRef, args=Args(member_factory=factory, status_override=Status.FAILURE)
     )
 
 
@@ -1308,14 +1341,7 @@ def loads_(decorator, *args, **kwargs):
     raise ValueError
 
 
-def print_fail(*args) -> Status:
-    print(*args)
-    return Status.FAILURE
 
-
-def print_success(*args) -> Status:
-    print(*args)
-    return Status.SUCCESS
 
 
 # TODO: add ability to use lambad specifying the 
