@@ -134,7 +134,7 @@ class VarStorer(Generic[T]):
     """Used to specify which variables are stored
     """
 
-    def __init__(self, val=UNDEFINED):
+    def __init__(self, val: T=UNDEFINED):
 
         if isinstance(val, Store):
             self._val = val
@@ -1344,54 +1344,3 @@ def loads_(decorator, *args, **kwargs):
         return TickDecoratorLoader(decorator(*args, **kwargs))
 
     raise ValueError
-
-
-
-
-
-# TODO: add ability to use lambad specifying the 
-# return value
-# 
-
-
-# TODO: Add action decorator for printing out etc
-
-# class TaskRefDecorator(TaskDecorator):
-#     """Decorator that uses a reference function. The reference function
-#     Must take in a task
-#     """
-
-#     def __init__(self, name: str, member_factory: MemberRefFactory, task: Task):
-#         super().__init__(name, task)
-
-#         self._member_ref = member_factory.produce(self._store, self._reference)
-#         # if self._reference is None:
-#         #     raise ValueError('Reference object must be defined to create a Decorator')
-        
-#         # self._decoration_str = decoration
-#         # self._args = args
-#         # self._args.kwargs['task'] = task
-
-#     def decorate(self):
-#         return self._member_ref.execute()
-#         # return self._execute_ref(self._reference, self._decoration_str, self._args, self._store)
-
-
-# class TaskRefDecoratorLoader(AtomicDecoratorLoader):
-
-#     def __init__(self, decoration: str, args: Args, name: str=None):
-
-#         super().__init__()
-#         self._decoration = decoration
-#         self._name = name or decoration
-#         self._args = args
-
-#     def decorate(self, item):
-#         return TaskRefDecorator(self._name, self._decoration, self._args, item)
-
-
-# @decorate.register
-# def _(decorator: str, *args, **kwargs):
-#     return TaskRefDecoratorLoader(
-#         decorator, Args(*args, **kwargs)
-#     )

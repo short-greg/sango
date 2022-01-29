@@ -72,6 +72,14 @@ class DummyAction(Action):
         return Status.RUNNING
 
 
+class DummyAction2(Action):
+
+    x = var_[int](1)
+
+    def act(self):
+        return Status.RUNNING
+
+
 class DummyNegative(Conditional):
 
     def check(self):
@@ -141,6 +149,21 @@ class TestCreateAtomicTask:
 
         actor = DummyAction(name='x')
         assert actor.status == Status.READY
+
+    def test_action_tick(self):
+
+        actor = DummyAction(name='x')
+        assert actor.name == 'x'
+
+    def test_action_tick(self):
+
+        actor = DummyAction('x')
+        assert actor.name == 'x'
+
+    def test_action_tick(self):
+
+        actor = DummyAction2('x')
+        assert actor.name == 'x'
 
 
 class TestSequenceTask:
