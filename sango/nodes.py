@@ -492,7 +492,8 @@ class Tree(Task, metaclass=TreeMeta):
         self.entry = entry
     
     def tick(self) -> Status:        
-        return self.entry.tick()
+        self._cur_status = self.entry.tick()
+        return self._cur_status
     
     def reset(self):
         return self.entry.reset()
