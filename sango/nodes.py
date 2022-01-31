@@ -264,14 +264,6 @@ class AtomicMeta(TaskMeta):
         cls.__pre_init__(self, store, reference)
         cls.__init__(self, *args, **kw)
         return self
-    
-
-class Atomic(Task, metaclass=AtomicMeta):
-    """Base class for an Atomic Class
-    """
-    
-    def __pre_init__(self, store: Storage, reference):
-        super().__pre_init__(store, reference)
 
 
 class Planner(ABC):
@@ -433,6 +425,7 @@ class Composite(Task, metaclass=CompositeMeta):
     
     def reset(self):
         super().reset()
+        self._planner.reset()
         for task in self._tasks:
             task.reset()
 
@@ -500,7 +493,7 @@ class Tree(Task, metaclass=TreeMeta):
         return self.entry.reset()
 
 
-class Action(Atomic):
+class Action(Task, metaclass=AtomicMeta):
     """Use to execute an action. Implement the 'act' method for subclasses"""
 
     @abstractmethod
@@ -514,7 +507,7 @@ class Action(Atomic):
         return self._cur_status
 
 
-class Conditional(Atomic):
+class Conditional(Task, metaclass=AtomicMeta):
     """Use to check a condition. Implement the 'check' method for subclasses"""
 
     @abstractmethod
@@ -1125,6 +1118,7 @@ class ActionRef(Action):
         self._status_override = status_override
 
     def reset(self):
+        super().reset()
         self._member_ref.get().reset()
 
     def act(self):
@@ -1143,6 +1137,7 @@ class ConditionalRef(Conditional):
         self._member_ref = member_factory.produce(self._store, self._reference)
 
     def reset(self):
+        super().reset()
         self._member_ref.get().reset()
 
     def check(self):
@@ -1224,6 +1219,20 @@ def _(act: str, *args, **kwargs) -> TaskLoader:
     )
 
 
+# TODO: Think about how to define this... will be called
+# on ready and on 
+
+# @singledispatch
+# def context(f, *args, **kwargs):
+#     factory  = MemberRefFactory(f, Args(*args, **kwargs))
+
+
+# @context.register
+# def _(f: str, *args, **kwargs):
+#     factory  = MemberRefFactory(f, Args(*args, **kwargs))
+
+
+
 @singledispatch
 def success(act, *args, **kwargs):
 
@@ -1286,6 +1295,7 @@ def _(check: str, *args, **kwargs) -> TaskLoader:
     return TaskLoader(
         ConditionalFuncRef, args=Args(member_factory=factory)
     )
+
 
 def condvar(check: str) -> TaskLoader:
     """Convenience function for creating a ConditionalRef
