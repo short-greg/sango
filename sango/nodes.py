@@ -496,6 +496,7 @@ class Tree(Task, metaclass=TreeMeta):
         return self._cur_status
     
     def reset(self):
+        self._cur_status = Status.READY
         return self.entry.reset()
 
 
