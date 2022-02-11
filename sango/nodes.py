@@ -95,6 +95,15 @@ class TypeFilter(ArgFilter):
         return isinstance(value, self._arg_type)
 
 
+class TaskClassFilter(ArgFilter):
+
+    def __init__(self, arg_type: typing.Type):
+        self._arg_type = arg_type
+    
+    def filter(self, name: str, annotation: typing.Type, value):
+        return isinstance(value, TaskMeta) and issubclass(value, self._arg_type)
+
+
 class ClassArgFilter(object):
     """Use to extract args from class members
     """
@@ -162,11 +171,6 @@ class VarStorer(Generic[T]):
 
 
 var_ = VarStorer
-
-# def var_(val=UNDEFINED):    
-#     """Convenience function to create a VarStorer
-#     """
-#     return VarStorer(val)
 
 
 def ref_is_external(task_cls, default=True):
@@ -362,7 +366,9 @@ class CompositeMeta(TaskMeta):
 
     def _load_tasks(cls, store, kw, reference):
         tasks = []
-        for name, loader in ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls).items():
+        for name, loader in ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter(TaskMeta)]).filter(cls).items():
+            if isinstance(loader, TaskMeta) and issubclass(loader, Task):
+                loader = TaskLoader(loader)
             loader: Loader = loader
             if name in kw:
                 loader(kw[name])
@@ -434,14 +440,15 @@ class TreeMeta(TaskMeta):
 
     def _load_entry(cls, store, kw, reference):
 
-        tasks = ClassArgFilter([TypeFilter(TaskLoader)]).filter(cls)
+        tasks = ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter(Task)]).filter(cls)
         if 'entry' not in tasks:
             raise AttributeError(f'Task entry not defined for tree')
         entry = tasks['entry']
         if entry in kw:
             entry(kw['entry'])
             del kw['entry']
-        
+        if isinstance(entry, TaskMeta) and issubclass(entry, Task):
+            entry = TaskLoader(entry)
         entry = entry.load(store, 'entry', reference)
         return entry
     
@@ -1232,7 +1239,6 @@ def _(act: str, *args, **kwargs) -> TaskLoader:
 #     factory  = MemberRefFactory(f, Args(*args, **kwargs))
 
 
-
 @singledispatch
 def success(act, *args, **kwargs):
 
@@ -1297,6 +1303,7 @@ def _(check: str, *args, **kwargs) -> TaskLoader:
     )
 
 
+@singledispatch
 def condvar(check: str) -> TaskLoader:
     """Convenience function for creating a ConditionalRef
 
