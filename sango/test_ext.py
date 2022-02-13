@@ -618,7 +618,6 @@ class TestTreeReference:
                 super().__init__(name)
                 self.x = False
 
-            @task
             class entry(Fallback):
                 x = condvar("x")
 

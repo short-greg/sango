@@ -11,14 +11,6 @@ from .vars import STORE_REF, Args, Ref, Shared, Storage, Store, Var, UNDEFINED
 from typing import Any, Generic, TypeVar
 from dataclasses import dataclass
 
-# TODO: Remove composite from ext
-# Remove task from ext
-# update conditional
-# update action
-# add sequence/fallback with composite meta to ext.. needs pre_init method 
-# Figure out how to use the TickDecorator / TaskDecorator
-#  use __lshift__ for task
-# Remove actionfunc/conditionalfunc
 
 class Status(Enum):
 
