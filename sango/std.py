@@ -739,10 +739,6 @@ class FSM(StateMachine):
         super().__init__(start, states, name)
         self._cur_state: Discrete = self._start
         self._cur_state.reset()
-    
-    def __init__(self, name: str=''):
-        
-        self._name = name
 
     @property
     def states(self):
@@ -855,13 +851,6 @@ class Failure(StatusMixin):
     @property
     def status(self) -> Status:
         return Status.FAILURE
-    
-    # @abstractmethod
-    # def emit_value(self):
-    #     raise NotImplementedError
-
-    # def update(self) -> Emission:
-    #     return Emission(self, self.emit_value())
 
 
 class Success(StatusMixin):
@@ -869,11 +858,3 @@ class Success(StatusMixin):
     @property
     def status(self) -> Status:
         return Status.SUCCESS
-
-    # @abstractmethod
-    # def emit_value(self):
-    #     raise NotImplementedError
-    
-    # def update(self) -> Emission:
-    #     return Emission(self, self.emit_value())
-

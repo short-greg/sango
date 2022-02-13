@@ -1084,7 +1084,7 @@ def to_status(failure: typing.Optional[str] = None, success: typing.Optional[str
 LinkFunc = typing.Callable[[typing.List[Discrete]], std.StateLink]
 
 
-class FSM(Ext, std.FSM, metaclass=StateMachineMeta):
+class FSM(ExtStateMachine, std.FSM, metaclass=StateMachineMeta):
     
     def __init__(self, name: str=''):
         std.FSM.__init__(

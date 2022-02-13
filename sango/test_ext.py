@@ -8,7 +8,8 @@ from .ext import (
     var_, ClassArgFilter, TypeFilter, Fallback,
     Tree, task_, Parallel, loads, TaskLoader, loads_,
     actionf, condf, condvar, Emission,
-    Running, Failure, Success, Discrete, Ready, FSM, StateID, StateVar, state_
+    Running, Failure, Success, Discrete, Ready, FSM, StateID, StateVar, state_,
+    fsmstate, to_state, to_status
 )
 
 from .std import (
@@ -853,148 +854,149 @@ class TestFSM:
         assert machine.status == Status.RUNNING
 
 
-# class FloatStateFailure(Failure[float]):
+class FloatStateFailure(Failure, Discrete[float]):
 
-#     x = var_(3.)
+    x = var_(3.)
 
-#     def emit_value(self) -> Emission[float]:
-#         return self.x.val
-
-
-# class FloatStateSuccess(Success[float]):
-
-#     x = var_(3.)
-
-#     def emit_value(self) -> Emission[float]:
-#         return self.x.val
+    def update(self) -> Emission[float]:
+        return Emission(self, self.status)
 
 
-# class TestFSMTaskInTree:
+class FloatStateSuccess(Success, Discrete[float]):
 
-#     class X(Tree):
+    x = var_(3.)
 
-#         @task
-#         class entry(FSM):
-
-#             start = state_(FloatState3, next_state=StateID('state2'))
-#             state2 = state_(FloatState3, next_state=StateID('state3'))
-#             state3 = state_(FloatStateSuccess)
+    def update(self) -> Emission[float]:
+        return Emission(self, self.status)
 
 
-#     class X2(Tree):
+class TestFSMTaskInTree:
 
-#         @task
-#         class entry(FSM):
+    class X(Tree):
 
-#             start = state_(FloatState3, next_state=StateID('state2'))
-#             state2 = state_(FloatState3,  next_state=StateID('state3'))
-#             state3 = state_(FloatStateFailure)
+        @task
+        class entry(FSM):
 
-#     def test_tree_returns_success(self):
-#         tree = TestFSMTaskInTree.X()
-
-#         assert tree.tick() == Status.RUNNING
-
-#     def test_tree_returns_failure(self):
-#         tree = TestFSMTaskInTree.X2()
-#         tree.tick()
-#         tree.tick()
-#         assert tree.tick() == Status.FAILURE
-
-#     def test_tree_returns_success(self):
-#         tree = TestFSMTaskInTree.X()
-#         tree.tick()
-#         tree.tick()
-#         assert tree.tick() == Status.SUCCESS
+            start = state_(FloatState3, next_state=StateID('state2'))
+            state2 = state_(FloatState3, next_state=StateID('state3'))
+            state3 = state_(FloatStateSuccess)
 
 
-# class HierarchicalMachineTest(FSM):
+    class X2(Tree):
 
-#     start = state_(FloatState3, next_state=StateID('state2'))
-#     @fsmstate(to_state(state3='state4'))
-#     class state2(FSM):
-#         start = state_(FloatState3, next_state=StateID('state3'))
-#         state3 = state_(EmissionState)
-#     state4 = state_(EmissionState)
+        @task
+        class entry(FSM):
 
+            start = state_(FloatState3, next_state=StateID('state2'))
+            state2 = state_(FloatState3,  next_state=StateID('state3'))
+            state3 = state_(FloatStateFailure)
 
-# class HierarchicaStatusMachineTest(FSM):
+    def test_tree_returns_success(self):
+        tree = TestFSMTaskInTree.X()
 
-#     start = state_(FloatState3, next_state=StateID('state2'))
-#     @fsmstate(to_status(failure='state4', success='state4'))
-#     class state2(FSM):
-#         start = state_(FloatState3, next_state=StateID('state3'))
-#         state3 = state_(EmissionState)
-#     state4 = state_(EmissionState)
+        assert tree.tick() == Status.RUNNING
 
+    def test_tree_returns_failure(self):
+        tree = TestFSMTaskInTree.X2()
+        tree.tick()
+        tree.tick()
+        assert tree.tick() == Status.FAILURE
 
-
-# class TestStateLink:
-
-#     def test_get_item_returns_correct_item(self):
-#         state = EmissionState('x')
-#         link = to_state(x='y')([state])
-#         assert link[state].ref == 'y'
-
-#     def test_to_status_maps_to_correct_state(self):
-#         state = EmissionState('x')
-#         link = to_status(failure='y')([state])
-#         assert link[state].ref == 'y'
-
-#     def test_to_state_raises_exception_if_state_not_final(self):
-#         state = FloatState2("x")
-#         with pytest.raises(ValueError):
-#             to_state(x='y')([state])
-
-#     def test_to_state_raises_exception_if_state_invalid(self):
-#         state = FloatState2("z")
-#         with pytest.raises(ValueError):
-#             to_state(x='y')([state])
-
-#     def test_to_status_raises_exception_if_not_defined(self):
-#         state = EmissionState("z")
-#         with pytest.raises(ValueError):
-#             to_status(success='y')([state])
+    def test_tree_returns_success(self):
+        tree = TestFSMTaskInTree.X()
+        tree.tick()
+        tree.tick()
+        assert tree.tick() == Status.SUCCESS
 
 
-# class TestHierarchicalFSM:
+class HierarchicalMachineTest(FSM):
 
-#     def test_basic_machine_start_state_is_correct(self):
-#         machine = HierarchicalMachineTest('tester')
-#         assert machine.cur_state.name == "start"
-
-#     def test_basic_machine_next_status_is_correct(self):
-#         machine = HierarchicalMachineTest('tester')
-#         status = machine.tick()
-#         assert status == Status.RUNNING
-
-#     def test_basic_machine_next_state_is_correct(self):
-#         machine = HierarchicalMachineTest('tester')
-#         machine.tick()
-#         assert machine.cur_state.name == 'state2'
-
-#     def test_basic_machine_next_state_after_two_ticks_is_correct(self):
-#         machine = HierarchicalMachineTest('tester')
-#         machine.tick()
-#         machine.tick()
-#         assert machine.cur_state.name == 'state4'
-
-#     def test_basic_machine_next_state_after_three_ticks_is_correct(self):
-#         machine = HierarchicalMachineTest('tester')
-#         machine.tick()
-#         machine.tick()
-#         result = machine.tick()
-#         assert result == Status.FAILURE
+    start = state_(FloatState3, next_state=StateID('state2'))
+    
+    @fsmstate(to_state(state3='state4'))
+    class state2(FSM):
+        start = state_(FloatState3, next_state=StateID('state3'))
+        state3 = state_(EmissionState)
+    state4 = state_(EmissionState)
 
 
-#     def test_basic_machine_next_state_after_three_ticks_is_correct(self):
-#         machine = HierarchicaStatusMachineTest('tester')
-#         machine.tick()
-#         machine.tick()
-#         result = machine.tick()
-#         assert result == Status.FAILURE
+class HierarchicaStatusMachineTest(FSM):
 
-#     def test_basic_machine_next_state_after_three_ticks_is_correct(self):
-#         machine = HierarchicaStatusMachineTest('tester')
-#         machine.tick()
-#         assert machine.cur_state.name == 'state2'
+    start = state_(FloatState3, next_state=StateID('state2'))
+    @fsmstate(to_status(failure='state4', success='state4'))
+    class state2(FSM):
+        start = state_(FloatState3, next_state=StateID('state3'))
+        state3 = state_(EmissionState)
+    state4 = state_(EmissionState)
+
+
+
+class TestStateLink:
+
+    def test_get_item_returns_correct_item(self):
+        state = EmissionState('x')
+        link = to_state(x='y')([state])
+        assert link[state].ref == 'y'
+
+    def test_to_status_maps_to_correct_state(self):
+        state = EmissionState('x')
+        link = to_status(failure='y')([state])
+        assert link[state].ref == 'y'
+
+    def test_to_state_raises_exception_if_state_not_final(self):
+        state = FloatState2("x")
+        with pytest.raises(ValueError):
+            to_state(x='y')([state])
+
+    def test_to_state_raises_exception_if_state_invalid(self):
+        state = FloatState2("z")
+        with pytest.raises(ValueError):
+            to_state(x='y')([state])
+
+    def test_to_status_raises_exception_if_not_defined(self):
+        state = EmissionState("z")
+        with pytest.raises(ValueError):
+            to_status(success='y')([state])
+
+
+class TestHierarchicalFSM:
+
+    def test_basic_machine_start_state_is_correct(self):
+        machine = HierarchicalMachineTest('tester')
+        assert machine.cur_state.name == "start"
+
+    def test_basic_machine_next_status_is_correct(self):
+        machine = HierarchicalMachineTest('tester')
+        status = machine.tick()
+        assert status == Status.RUNNING
+
+    def test_basic_machine_next_state_is_correct(self):
+        machine = HierarchicalMachineTest('tester')
+        machine.tick()
+        assert machine.cur_state.name == 'state2'
+
+    def test_basic_machine_next_state_after_two_ticks_is_correct(self):
+        machine = HierarchicalMachineTest('tester')
+        machine.tick()
+        machine.tick()
+        assert machine.cur_state.name == 'state4'
+
+    def test_basic_machine_next_state_after_three_ticks_is_correct(self):
+        machine = HierarchicalMachineTest('tester')
+        machine.tick()
+        machine.tick()
+        result = machine.tick()
+        assert result == Status.FAILURE
+
+
+    def test_basic_machine_next_state_after_three_ticks_is_correct(self):
+        machine = HierarchicaStatusMachineTest('tester')
+        machine.tick()
+        machine.tick()
+        result = machine.tick()
+        assert result == Status.FAILURE
+
+    def test_basic_machine_next_state_after_three_ticks_is_correct(self):
+        machine = HierarchicaStatusMachineTest('tester')
+        machine.tick()
+        assert machine.cur_state.name == 'state2'
