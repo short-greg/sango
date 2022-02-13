@@ -17,21 +17,6 @@ from .std import (
     TickDecorator2nd, fail_on_first, succeed_on_first
 )
 
-# from import (
-#     Action, Conditional, Fallback, LinearPlanner, 
-#     Parallel, Sequence, Status, Task, TaskLoader, 
-#     TickDecorator, TickDecorator2nd, Tree, 
-#     TypeFilter, VarStorer, action, actionf, cond, condf, condvar, 
-#     fail, fail_on_first, loads, loads_, neg, 
-#     succeed, succeed_on_first, task, task_, until, 
-#     vals, ClassArgFilter, var_
-# )
-
-
-# import pytest
-# from sango.nodes import Status, Tree, task, var_
-# from sango.vars import Args, Ref, Var
-# from .states import FSM, Discrete, Emission, Failure, Running, StateID, StateLink, StateVar, Success, fsmstate, state, state_, to_state, to_status
 
 
 class TestVals:
@@ -324,7 +309,7 @@ class TestTree:
     def test_tree_with_one_fallback(self):
 
         class X(Tree):
-            @task
+
             class entry(Fallback):
                 pos = task_(DummyPositive)
                 neg = task_(DummyPositive)
@@ -347,7 +332,7 @@ class TestTree:
     def test_tick_with_two_parallel_element(self):
 
         class X(Tree):
-            @task
+
             class entry(Parallel):
                 pos = task_(DummyPositive)
                 neg = task_(DummyNegative)
@@ -376,7 +361,6 @@ class TestDecorators:
     def test_neg_preceding_dirctor_with_one_sequence(self):
 
         class X(Tree):
-            @task
             @neg
             class entry(Fallback):
                 pos = task_(DummyPositive)
@@ -389,7 +373,7 @@ class TestDecorators:
     def test_fail_preceding_decorator_with_one_sequence(self):
 
         class X(Tree):
-            @task
+        
             @succeed
             class entry(Sequence):
                 neg = task_(DummyNegative)
@@ -403,7 +387,6 @@ class TestDecorators:
 
         class X(Tree):
 
-            @task
             @until
             @neg
             class entry(Sequence):
@@ -418,7 +401,7 @@ class TestDecorators:
     def test_until_with_one_sequence(self):
 
         class X(Tree):
-            @task
+            
             @until
             class entry(Sequence):
                 range = task_(DummyRange)
@@ -639,7 +622,6 @@ class TestTreeReference:
             class entry(Fallback):
                 x = condvar("x")
 
-                @task
                 @neg
                 class t(Fallback):
                     z = actionf('t')

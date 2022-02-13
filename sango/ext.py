@@ -49,7 +49,7 @@ from sango.vars import UNDEFINED, Args, Storage
 # from .nodes import ClassArgFilter, Loader, MemberRef, MemberRefFactory, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 from . import std
-from .std import Status, Emission, Running, Ready, Success, Failure, StateVar, StateID
+from .std import Status, Emission, Running, Ready, Success, Failure, StateVar, StateID, TaskDecorator, TickDecorator
 
 def vals(cls):
 
@@ -98,11 +98,16 @@ class TypeFilter(ArgFilter):
 
 class TaskClassFilter(ArgFilter):
 
-    def __init__(self, arg_type: typing.Type):
-        self._arg_type = arg_type
+    def __init__(self):
+        pass
+        # self._arg_type = arg_type
     
     def filter(self, name: str, annotation: typing.Type, value):
-        return isinstance(value, TaskMeta) and issubclass(value, std.Task)
+        print(name, value, type(value))
+        return (
+            (isinstance(value, TaskMeta) and issubclass(value, std.Task)) or
+            isinstance(value, TickDecorator) or isinstance(value, TaskDecorator)
+        )
 
 
 class ClassArgFilter(object):
@@ -258,8 +263,8 @@ class CompositeMeta(TaskMeta):
 
     def _load_tasks(cls, store, kw, reference):
         tasks = []
-        for name, loader in ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter(TaskMeta)]).filter(cls).items():
-            if isinstance(loader, TaskMeta):
+        for name, loader in ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter()]).filter(cls).items():
+            if not isinstance(loader, TaskLoader):
                 loader = TaskLoader(loader)
             loader: Loader = loader
             if name in kw:
@@ -290,12 +295,12 @@ class TreeMeta(TaskMeta):
 
     def _load_entry(cls, store, kw, reference):
 
-        tasks = ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter(Task)]).filter(cls)
+        tasks = ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter()]).filter(cls)
 
         if 'entry' not in tasks:
             raise AttributeError(f'Task entry not defined for tree')
         entry = tasks['entry']
-        if isinstance(entry, TaskMeta):
+        if not isinstance(entry, TaskLoader):
             entry = TaskLoader(entry)
         if entry in kw:
             entry(kw['entry'])
