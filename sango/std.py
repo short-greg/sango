@@ -26,6 +26,39 @@ class Status(Enum):
         return self == Status.FAILURE or self == Status.SUCCESS or self == Status.DONE
 
 
+class Filter(ABC):
+
+    @abstractmethod
+    def check(self, node):
+        raise NotImplementedError
+    
+
+class IntersectFilter(Filter):
+
+    def __init__(self, filters: typing.List[Filter]):
+        self._filters = filters
+    
+    def check(self, node):
+
+        for filter in self._filters:
+            if not filter.check(node):
+                return False
+        return True
+
+
+class UnionFilter(Filter):
+
+    def __init__(self, filters: typing.List[Filter]):
+        self._filters = filters
+    
+    def check(self, node):
+
+        for filter in self._filters:
+            if filter.check(node):
+                return True
+        return False
+
+
 class Task(object):
     """The base class for a Task node
 
@@ -61,6 +94,9 @@ class Task(object):
             return decorator.decorate(self)
         return decorator(self)
 
+    def iterate(self, filter: Filter, deep: bool):
+        pass
+
 
 Task.__call__ = Task.tick
 
@@ -74,6 +110,10 @@ class Planner(ABC):
         pass
 
     @abstractmethod
+    def rev(self):
+        pass
+
+    @abstractmethod
     def end(self):
         pass
     
@@ -82,7 +122,23 @@ class Planner(ABC):
         pass
 
     @abstractproperty
+    def idx(self):
+        pass
+    
+    @idx.setter
+    def idx(self, idx: int):
+        pass
+
+    @abstractproperty
     def cur(self):
+        pass
+
+    @abstractmethod
+    def clone(self):
+        pass
+
+    @abstractmethod
+    def __len__(self):
         pass
 
 
@@ -97,9 +153,16 @@ class LinearPlanner(object):
     def reset(self, items: list=None):
         self._idx = 0
         self._items = coalesce(items, self._items)
-        
+    
+    @property
     def idx(self):
         return self._idx
+    
+    @idx.setter
+    def idx(self, idx):
+        if not (0 <= idx < len(self._items)):
+            raise IndexError(f"Index {idx} is out of range in {len(self._items)}")
+        self._idx = idx
 
     def end(self):
         if self._idx == len(self._items):
@@ -124,6 +187,12 @@ class LinearPlanner(object):
         self._idx -= 1
         return True
 
+    def clone(self):
+        return LinearPlanner([*self._items])
+    
+    def __len__(self):
+        return len(self._items)
+
 
 def iterate_planner(planner: Planner) -> Iterator[Task]:
     """
@@ -137,24 +206,69 @@ def iterate_planner(planner: Planner) -> Iterator[Task]:
         planner.adv()
 
 
-def shuffle(linear: LinearPlanner):
-    """Decorator for a linear planner that will shuffle the order
-    in which tasks get executed
-    """
+class PlannerDecorator(Planner):
 
-    old_reset = linear.reset
-    def shuffle(items):
-        if items is not None:
-            items = [*items]
-            random.shuffle(items)
-        return items
+    def __init__(self, planner: Planner):
 
-    def reset(self, items: list=None):
-        old_reset(self, shuffle(items))
+        self._planner = planner
 
-    linear.reset = reset
-    linear.reset()
-    return linear
+    def adv(self):
+        self._planner.adv()
+
+    def rev(self):
+        self._planner.rev()
+
+    def end(self):
+        return self._planner.end()
+    
+    def reset(self):
+        self._planner.reset()
+
+    def cur(self):
+        return self._planner.cur
+
+    def clone(self):
+        return self.__class__(self._planner.clone())
+
+
+class ShufflePlanner(PlannerDecorator):
+
+    def __init__(self, planner: Planner):
+        super().__init__(planner)
+        self._order = self._shuffle()
+        self._idx = 0
+
+    def _shuffle(self):
+        order = range(len(self._planner))
+        random.shuffle(order)
+        return order
+
+    def reset(self):
+        self._planner.reset()
+        self._order = self._shuffle()
+    
+    @property
+    def idx(self):
+        return self._idx
+
+    @idx.setter
+    def idx(self, idx: int):
+        self._idx = idx
+        self._planner.idx = self._order[idx]
+
+    def adv(self):
+        if self._idx == len(self._order):
+            return False
+        self._idx += 1
+        self._planner.idx = self._order[self._idx]
+        return True
+
+    def rev(self):
+        if self._idx == 0:
+            return False
+        self._idx -= 1
+        self._planner.idx = self._order[self._idx]
+        return True
 
 
 class Composite(Task):
@@ -203,6 +317,15 @@ class Composite(Task):
         for task in self._tasks:
             task.reset()
 
+    def iterate(self, filter: Filter, deep: bool):
+        
+       for task in self._tasks:
+           if filter.check(task):
+               yield task
+               if deep:
+                   for subtask in task.iterate(filter, deep):
+                       yield subtask
+
 
 class Tree(Task):
     """The base behavior tree task. Use the behavior tree like a regular class
@@ -221,6 +344,13 @@ class Tree(Task):
         self._cur_status = Status.READY
         return self.entry.reset()
 
+    def iterate(self, filter: Filter, deep: bool):
+        
+        if filter.check(self.entry):
+            yield self.entry
+            if deep:
+                for subtask in self.entry.iterate(filter, deep):
+                    yield subtask
 
 class Action(Task):
     """Use to execute an action. Implement the 'act' method for subclasses"""
@@ -612,6 +742,11 @@ class State(Generic[V]):
     def reset(self):
         pass
 
+    def iterate(self, filter: Filter, deep: bool):
+        
+       pass
+
+
 
 class StateID(object):
 
@@ -681,6 +816,14 @@ class StateMachine(Task):
     def tick(self):
         raise NotImplementedError
 
+    def iterate(self, filter: Filter, deep: bool):
+        
+       for state in self._states:
+           if filter.check(state):
+               yield state
+               if deep:
+                   for substate in state.iterate(filter, deep):
+                       yield substate
 
 
 class StateLink(object):
@@ -790,6 +933,12 @@ class FSMState(Discrete):
     def status(self):
         return self._machine.status
 
+    def iterate(self, filter: Filter, deep: bool):
+        
+       for state in self._machine.iterate(filter, deep):
+           if filter.check(state):
+               yield state
+
 
 class TaskState(Discrete):
     
@@ -815,6 +964,12 @@ class TaskState(Discrete):
             return self._success_to
         
         return self
+
+    def iterate(self, filter: Filter, deep: bool):
+        
+       for task in self._task.iterate(filter, deep):
+           if filter.check(task):
+               yield task
 
 
 class StatusMixin(object):
