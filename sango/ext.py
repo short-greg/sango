@@ -29,14 +29,15 @@ from abc import ABC, abstractmethod, abstractproperty
 import typing
 from functools import singledispatch, singledispatchmethod
 from typing import Any, Generic, TypeVar
-from .vars import STORE_REF, Args, Ref, Storage, Store, Var, UNDEFINED
+from .vars import STORE_REF, Args, Ref, Storage, Store, Var, Shared, UNDEFINED
 from abc import ABC, abstractmethod
 from functools import singledispatch
 import typing
 from sango.vars import UNDEFINED, Args, Storage
 from typing import Any, Generic, TypeVar
 from . import std
-from .std import Status, StateVar, TaskDecorator, TickDecorator
+from .std import Status, StateVar, TaskDecorator, TickDecorator, neg, fail, until, fail_on_first, succeed_on_first, succeed
+
 
 def vals(cls):
 
@@ -86,7 +87,6 @@ class TypeFilter(ArgFilter):
 class TaskClassFilter(ArgFilter):
     
     def filter(self, name: str, annotation: typing.Type, value):
-        print(name, value, type(value))
         return (
             (isinstance(value, TaskMeta) and issubclass(value, std.Task)) or
             isinstance(value, TickDecorator) or isinstance(value, TaskDecorator)

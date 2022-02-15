@@ -126,7 +126,6 @@ class StatusFilter(Filter):
     
     def check(self, node):
         if isinstance(node, Task):
-            print(node.status)
             return node.status in self._statuses
         return False
 
