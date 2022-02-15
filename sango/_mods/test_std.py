@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from .std import StatusFilter, Sequence, ShufflePlanner, Status, LinearPlanner, Conditional
+from .std import StatusFilter, Sequence, Status, LinearPlanner, Conditional
 
 
 class TestStatus:
@@ -46,54 +46,6 @@ class TestLinearPlanner:
         assert isinstance(planner.cur, DummyPositive)
         planner.adv()
         assert isinstance(planner.cur, DummyNegative)
-
-
-class TestShufflePlanner:
-
-    def test_first_element_in_plan_is_correct(self):
-
-        random.seed(2)
-        planner = ShufflePlanner(LinearPlanner(
-            [DummyNegative(name='x'), DummyPositive(name='y')]
-        ))
-        assert isinstance(planner.cur, DummyPositive)
-
-    def test_second_element_in_plan_is_correct(self):
-
-        random.seed(2)
-        planner = ShufflePlanner(LinearPlanner(
-            [DummyNegative(name='x'), DummyPositive(name='y')]))
-        planner.adv()
-        assert isinstance(planner.cur, DummyNegative)
-
-    def test_third_element_in_plan_is_end(self):
-
-        random.seed(2)
-        planner = ShufflePlanner(LinearPlanner(
-            [DummyNegative(name='x'), DummyPositive(name='y')]))
-        planner.adv()
-        planner.adv()
-        assert planner.end()
-
-    def test_rev_past_beginning_returns_false(self):
-
-        random.seed(2)
-        planner = ShufflePlanner(LinearPlanner(
-            [DummyNegative(name='x'), DummyPositive(name='y')]))
-        planner.adv()
-        planner.rev()
-
-        assert planner.rev() is False
-
-    def test_adv_past_end_returns_false(self):
-
-        random.seed(2)
-        planner = ShufflePlanner(LinearPlanner(
-            [DummyNegative(name='x'), DummyPositive(name='y')]))
-        planner.adv()
-        planner.adv()
-
-        assert planner.adv() is False
 
 
 class TestIteration:
