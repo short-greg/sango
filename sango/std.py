@@ -4,6 +4,8 @@ import typing
 from functools import singledispatch, singledispatchmethod
 from abc import ABC, abstractmethod, abstractproperty
 from functools import wraps
+
+from numpy import isin
 from .utils import coalesce
 from typing import Iterator
 import random
@@ -105,6 +107,18 @@ class Task(object):
         # Hack to ensure this is an iterator
         if False:
             yield None
+
+class StatusFilter(Filter):
+
+    def __init__(self, statuses: typing.Iterable):
+
+        self._statuses = statuses
+    
+    def check(self, node):
+        if isinstance(node, Task):
+            print(node.status)
+            return node.status in self._statuses
+        return False
 
 
 Task.__call__ = Task.tick

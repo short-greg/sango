@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from .std import Sequence, ShufflePlanner, Status, LinearPlanner, Conditional
+from .std import StatusFilter, Sequence, ShufflePlanner, Status, LinearPlanner, Conditional
 
 
 class TestStatus:
@@ -96,7 +96,6 @@ class TestShufflePlanner:
         assert planner.adv() is False
 
 
-
 class TestIteration:
 
     def test_iterate_over_sequence(self):
@@ -123,4 +122,26 @@ class TestIteration:
         sequence2 = Sequence([DummyNegative(name='x'), DummyPositive(name='y')])
         sequence3 = Sequence([sequence1, sequence2])
         nodes = [node for node in sequence3.iterate(deep=False)]
+        assert len(nodes) == 2
+
+    def test_iterate_over_two_sequences_running_status(self):
+        sequence1 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+        sequence2 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+        sequence3 = Sequence([sequence1, sequence2])
+        sequence3.tick()
+        nodes = [node for node in sequence3.iterate(
+            StatusFilter([Status.RUNNING]
+        ), deep=True)]
+
+        assert len(nodes) == 1
+
+    def test_iterate_over_two_sequences_running_status(self):
+        sequence1 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+        sequence2 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+        sequence3 = Sequence([sequence1, sequence2])
+        sequence3.tick()
+        nodes = [node for node in sequence3.iterate(
+            StatusFilter([Status.RUNNING, Status.SUCCESS]), 
+            deep=True)]
+
         assert len(nodes) == 2
