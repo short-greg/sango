@@ -1,7 +1,7 @@
 """
-Nodes for buidling a Behavior Tree. A tree can be built hierarchically within
-Python's class system by specifying which members are tasks and which
-are variables to store.
+Nodes extending the behavior tree and state machine classes defined
+in the std module. It makes the definition of a behavior tree more
+hierarchical and easier to visualize.
 
 example:
 class tree(Tree):
@@ -14,7 +14,6 @@ class tree(Tree):
 
         # tasks - sequence of tasks to execute
         save = action('save')
-        @task
         class finished(Conditional):
             def check(self):
                 # will refer to the variable 'finished'
@@ -25,31 +24,19 @@ class tree(Tree):
         pass
 
 """
+
 from abc import ABC, abstractmethod, abstractproperty
-from enum import Enum
 import typing
 from functools import singledispatch, singledispatchmethod
 from typing import Any, Generic, TypeVar
-from .vars import STORE_REF, Args, Ref, Shared, Storage, Store, Var, UNDEFINED
-from .utils import coalesce
-import random
-from functools import wraps
-
-"""
-State machine classes to use in conjunction with the Behavior Tree. This
-makes it possible to build more complex state machines, such as
-ones that execute in parallel or ones that are pause the execution of others
-"""
-
+from .vars import STORE_REF, Args, Ref, Storage, Store, Var, UNDEFINED
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from functools import singledispatch
 import typing
 from sango.vars import UNDEFINED, Args, Storage
-# from .nodes import ClassArgFilter, Loader, MemberRef, MemberRefFactory, Status, Task, TaskLoader, TaskMeta, TypeFilter, task
 from typing import Any, Generic, TypeVar
 from . import std
-from .std import Status, Emission, Running, Ready, Success, Failure, StateVar, StateID, TaskDecorator, TickDecorator
+from .std import Status, StateVar, TaskDecorator, TickDecorator
 
 def vals(cls):
 
@@ -97,10 +84,6 @@ class TypeFilter(ArgFilter):
 
 
 class TaskClassFilter(ArgFilter):
-
-    def __init__(self):
-        pass
-        # self._arg_type = arg_type
     
     def filter(self, name: str, annotation: typing.Type, value):
         print(name, value, type(value))
@@ -210,7 +193,6 @@ class TaskMeta(type):
             reference = kw['reference']
             del kw['reference']
             return reference
-
 
 
 class Ext(object):

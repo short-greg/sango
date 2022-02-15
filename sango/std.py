@@ -1,3 +1,13 @@
+"""
+Nodes for buidling a Behavior Tree. A tree can be built hierarchically within
+Python's class system by specifying which members are tasks and which
+are variables to store.
+
+Also nodes for building a state machine to use in conjunction with the Behavior Tree. This
+makes it possible to build more complex state machines, such as
+ones that execute in parallel or ones that are pause the execution of others
+
+"""
 
 from enum import Enum
 import typing
@@ -9,7 +19,7 @@ from numpy import isin
 from .utils import coalesce
 from typing import Iterator
 import random
-from .vars import STORE_REF, Args, Ref, Shared, Storage, Store, Var, UNDEFINED
+from .vars import Args, UNDEFINED
 from typing import Any, Generic, TypeVar
 from dataclasses import dataclass
 
@@ -352,7 +362,7 @@ class Composite(Task):
             task.reset()
 
     def iterate(self, filter: Filter=None, deep: bool=True):
-        filter = filter or NullFilter()
+        filter = filter or NullFilter()    
         for task in self._tasks:
             if filter.check(task):
                 yield task
