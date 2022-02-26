@@ -199,8 +199,15 @@ class TaskMeta(type):
 
 
 class Ext(object):
-        
+    """Mixin extends the tree modules so they can be defined hierarchically in a class
+    """
     def __pre_init__(self, store: Storage, reference):
+        """_summary_
+
+        Args:
+            store (Storage): Storage that the node retrieves from
+            reference (Any): Base reference object for the node
+        """
         self._store = store
         self._reference = reference
 
@@ -218,12 +225,21 @@ class Ext(object):
 
 
 class Task(Ext, std.Task, metaclass=TaskMeta):
+    """Define task hierarchically
+    """
     pass
 
 
 class ExtComposite(Ext):
         
-    def __pre_init__(self, tasks: typing.List[Task], store: Storage, reference):
+    def __pre_init__(self, tasks: typing.List[Task], store: Storage, reference: Any):
+        """Extend composite nodes
+
+        Args:
+            tasks (typing.List[Task]): Tasks making up  the composite node
+            store (Storage): Storage for the node
+            reference (Any): Reference that the node refers to
+        """
         self._store = store
         self._reference = reference
         self.__tasks__ = tasks
@@ -245,6 +261,8 @@ class AtomicMeta(TaskMeta):
 
 
 class CompositeMeta(TaskMeta):
+    """Allows tasks to be defined like class members of the node
+    """
 
     def _load_tasks(cls, store, kw, reference):
         tasks = []
@@ -265,10 +283,13 @@ class CompositeMeta(TaskMeta):
         tasks = cls._load_tasks(store, kw, reference)
         cls.__pre_init__(self, tasks, store, reference)
         cls.__init__(self, *args, **kw)
+        del self.__tasks__
         return self
 
 
 class ExtTree(Ext):
+    """Mixin Extends tree 
+    """
         
     def __pre_init__(self, entry: Task, store: Storage, reference):
         self._store = store
@@ -322,6 +343,7 @@ class TreeMeta(TaskMeta):
         entry = cls._load_entry(store, kw, reference)
         cls.__pre_init__(self, entry, store, reference)
         cls.__init__(self, *args, **kw)
+        del self.__entry__
         return self
 
 
@@ -334,10 +356,14 @@ class Tree(ExtTree, std.Tree, metaclass=TreeMeta):
 
 
 class Action(Ext, std.Action, metaclass=AtomicMeta):
+    """Extension node for Action
+    """
     pass
 
 
 class Conditional(Ext, std.Conditional, metaclass=AtomicMeta):
+    """Extension node for Conditional
+    """
     pass
 
 
@@ -371,6 +397,8 @@ class DecoratorLoader(ABC):
 
 
 class Loader(object):
+    """Loads nodes in the tree
+    """
 
     def __init__(self, factory: typing.Callable=UNDEFINED, args: Args=None):
 
@@ -378,6 +406,16 @@ class Loader(object):
         self._args = args or Args()
     
     def load(self, storage: Storage, name: str='', reference=None):
+        """Load the item the factory produces
+
+        Args:
+            storage (Storage): Storage for the tree
+            name (str, optional): Name of the node. Defaults to ''.
+            reference (_type_, optional): Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         storage = Storage(parent=storage)
         args = self._args.update_refs(storage)
 
@@ -400,12 +438,24 @@ class Loader(object):
 
 class TaskLoader(Loader):
 
-    def __init__(self, cls: typing.Type=UNDEFINED, args: Args=None):
+    def __init__(self, cls: typing.Type[Task]=UNDEFINED, args: Args=None):
+        """initializer
+
+        Args:
+            cls (typing.Type, optional): Task class to load. Defaults to UNDEFINED.
+            args (Args, optional): _description_. Defaults to None.
+        """
 
         super().__init__(cls, args)
         self.decorator: DecoratorLoader = None
 
     def add_decorator(self, decorator, prepend=True):
+        """Add a decorator to the TaskLoader
+
+        Args:
+            decorator : Decorator to decorate the task with
+            prepend (bool, optional): Whether to prepend or append the decorator. Defaults to True.
+        """
 
         if self.decorator is None:
             self.decorator = decorator
@@ -415,6 +465,16 @@ class TaskLoader(Loader):
             self.decorator = self.decorator.append(decorator)
     
     def load(self, storage: Storage, name: str='', reference=None):
+        """_summary_
+
+        Args:
+            storage (Storage): Storage for the tree
+            name (str, optional): Name of the node. Defaults to ''.
+            reference (_type_, optional): Reference object for the node. Defaults to None.
+
+        Returns:
+            Task
+        """
 
         task = super().load(storage, name, reference)
         if self.decorator is not None:
@@ -422,6 +482,14 @@ class TaskLoader(Loader):
         return task
 
     def __lshift__(self, decorator: DecoratorLoader):
+        """prepend a decorator to the decorator list
+
+        Args:
+            decorator (DecoratorLoader)
+
+        Returns:
+            TaskLoader
+        """
 
         self.add_decorator(decorator)
         return self
@@ -439,40 +507,56 @@ def task_(cls: typing.Type[Task], *args, **kwargs):
     return TaskLoader(cls, args=Args(*args, **kwargs))
 
 
-
 class Sequence(ExtComposite, std.Sequence, metaclass=CompositeMeta):
+    """Exension version of Sequence
+    """
     
     def __init__(self, name: str='', planner: std.Planner=None):
         std.Sequence.__init__(self, self.__tasks__, name, planner)
 
 
 class Fallback(ExtComposite, std.Fallback, metaclass=CompositeMeta):
+    """Exension version of Fallback
+    """
 
     def __init__(self, name: str='', planner: std.Planner=None):
         std.Fallback.__init__(self, self.__tasks__, name, planner)
 
 
 class Parallel(ExtComposite, std.Parallel, metaclass=CompositeMeta):
+    """Exension version of Parallel
+    """
 
     def __init__(self, name: str='', planner: std.Planner=None):
         std.Parallel.__init__(self, self.__tasks__, name, planner)
 
 
 class DecoratorSequenceLoader(DecoratorLoader):
-    """A sequence of decorators
+    """Loads a sequence of decorators
     """
 
     def __init__(self, decorators: typing.List[DecoratorLoader]):
+        """initializer
 
+        Args:
+            decorators (typing.List[DecoratorLoader]): _description_
+        """
         super().__init__()
         self._decorators = decorators
 
     @singledispatchmethod
     def __call__(self, loader):
+        """
+        Args:
+            loader (DecoratorLoader): 
+
+        Returns:
+            DecoratorSequenceLoader: _description_
+        """
         return self.prepend(loader)
 
     @__call__.register
-    def _(self, loader: Loader):
+    def _(self, loader: TaskLoader):
         loader.add_decorator(self)
         return loader
     
@@ -480,13 +564,36 @@ class DecoratorSequenceLoader(DecoratorLoader):
         return self.prepend(other)
 
     def append(self, other):
+        """Append a decorator loader to the seequence
+
+        Args:
+            other (DecoratorLoader)
+
+        Returns:
+            DecoratorSequenceLoader
+        """
         return DecoratorSequenceLoader.from_pair(self, other)
 
     def prepend(self, other):
+        """Prepend a decorator loader to the seequence
+
+        Args:
+            other (DecoratorLoader)
+
+        Returns:
+            DecoratorSequenceLoader
+        """
         return DecoratorSequenceLoader.from_pair(other, self)
 
     def decorate(self, item):
-        
+        """decorate the item
+
+        Args:
+            item (_type_)
+
+        Returns:
+            _type_: _description_
+        """
         for decorator in reversed(self._decorators):
             item = decorator.decorate(item)
         return item
@@ -505,7 +612,6 @@ class DecoratorSequenceLoader(DecoratorLoader):
         Returns:
             [type]: [description]
         """
-
         loaders = []
         if isinstance(first, DecoratorSequenceLoader):
             loaders.extend(first._decorators)
@@ -592,13 +698,28 @@ class TickDecoratorLoader(AtomicDecoratorLoader):
 class MemberRef(object):
 
     def __init__(self, member: str, args: Args, store: Store, reference):
+        """Reference a member 
 
+        Args:
+            member (str): 
+            args (Args): 
+            store (Store): 
+            reference (_type_): 
+        """
         self._member = member
         self._args = args
         self._store = store
         self._reference = reference
 
     def _process_ref_arg(self, arg):
+        """Get teh value for a ref arg
+
+        Args:
+            arg
+
+        Returns:
+            Any: evaluation of the arg
+        """
 
         if isinstance(arg, Ref):
             return arg.shared(self._store).val
@@ -609,28 +730,55 @@ class MemberRef(object):
         return arg
 
     def _process_ref_args(self):
-
+        """
+        Returns:
+            Args: Updated args after processing
+        """
         return Args(
             *[self._process_ref_arg(arg) for arg in self._args.args],
             **{k: self._process_ref_arg(arg) for k, arg in self._args.kwargs.items()}
         )
     
     def execute(self):
+        """Execute the member
+
+        Returns:
+            Any: Result of execution
+        """
         args = self._process_ref_args()
         return getattr(self._reference, self._member)(*args.args, **args.kwargs)
 
     def get(self):
+        """Get the member
+
+        Returns:
+            Any: The member
+        """
         return getattr(self._reference, self._member)
 
 
 class MemberRefFactory(object):
+    """Factory fo producing a member ref
+    """
 
     def __init__(self, member: str, args: Args=None):
 
         self._member = member
         self._args = args if args is not None else Args()
     
-    def produce(self, store: Store, reference):
+    def produce(self, store: Store, reference) -> MemberRef:
+        """Produce the member ref
+
+        Args:
+            store (Store): _description_
+            reference (_type_): _description_
+
+        Raises:
+            ValueError: Must define Reference object
+
+        Returns:
+            MemberRef
+        """
 
         if reference is None:
             raise ValueError('Reference object must be defined to create an ActionReference')
@@ -883,8 +1031,6 @@ class StateMeta(TaskMeta):
 
 
 V = TypeVar('V')
- 
-# Emission = TypeVar('Emission')
 
 
 class Discrete(Ext, std.Discrete[V], metaclass=StateMeta):
@@ -971,8 +1117,16 @@ def state(*args, **kwargs):
 
 
 class DiscreteStateRef(Discrete):
+    """Reference to a discrete state
+    """
 
     def __init__(self, name: str, member_factory: MemberRefFactory):
+        """_summary_
+
+        Args:
+            name (str): _description_
+            member_factory (MemberRefFactory): _description_
+        """
         super().__init__(name)
         self._member_ref = member_factory.produce(self._store, self._reference)
     
@@ -992,6 +1146,8 @@ class DiscreteStateRef(Discrete):
 
 
 def to_state(**state_map: typing.Dict[str, str]):
+    """Convert a state machine into a state
+    """
     
     def _(states: typing.List[std.State]):
 
@@ -1020,6 +1176,12 @@ def to_state(**state_map: typing.Dict[str, str]):
 
 
 def to_status(failure: typing.Optional[str] = None, success: typing.Optional[str]=None):
+    """Map a state machine's states to particular statuses
+
+    Args:
+        failure (typing.Optional[str], optional): Name of state to map failure to. Defaults to None.
+        success (typing.Optional[str], optional): Name of state to map success to. Defaults to None.
+    """
 
     def _(states: typing.List[std.State]):
 
@@ -1055,6 +1217,8 @@ class FSM(ExtStateMachine, std.FSM, metaclass=StateMachineMeta):
 
 
 class FSMStateLoader(StateLoader):
+    """Loads an FSMState
+    """
 
     def __init__(self, fsm_factory, link_f: LinkFunc, args: Args=None):
 
@@ -1090,6 +1254,8 @@ def fsmstate(map_to: typing.Dict[str, std.State], *args, **kwargs):
 
 
 class FSMRef(std.FSM):
+    """FSM based on a reference to a finite state machine
+    """
 
     def __init__(self, name: str, member_ref: MemberRef):
         super().__init__(name)
@@ -1099,11 +1265,9 @@ class FSMRef(std.FSM):
         self._member_ref.get().enter()
 
     def reset(self):
-
         self._member_ref.get().reset()
 
     def update(self):
-
         return self._member_ref.get().update()
 
     @property

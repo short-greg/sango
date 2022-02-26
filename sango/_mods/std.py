@@ -49,9 +49,22 @@ class NullFilter(Filter):
 class IntersectFilter(Filter):
 
     def __init__(self, filters: typing.List[Filter]):
+        """initializer
+
+        Args:
+            filters (typing.List[Filter]): Filters to intersect
+        """
         self._filters = filters
     
-    def check(self, node):
+    def check(self, node) -> bool:
+        """Check if the node passes the filter
+
+        Args:
+            node: Node to filter
+
+        Returns:
+            bool
+        """
 
         for filter in self._filters:
             if not filter.check(node):
@@ -62,9 +75,22 @@ class IntersectFilter(Filter):
 class UnionFilter(Filter):
 
     def __init__(self, filters: typing.List[Filter]):
+        """initializer
+
+        Args:
+            filters (typing.List[Filter]): Filters to intersect
+        """
         self._filters = filters
     
-    def check(self, node):
+    def check(self, node) -> bool:
+        """Check if the node passes the filter
+
+        Args:
+            node: Node to filter
+
+        Returns:
+            bool
+        """
 
         for filter in self._filters:
             if filter.check(node):
@@ -91,10 +117,20 @@ class Task(object):
     
     @abstractmethod
     def tick(self) -> Status:
+        """Execute the task
+
+        Returns:
+            Status
+        """
         raise NotImplementedError
 
     @property
     def status(self) -> Status:
+        """Current status of the 
+
+        Returns:
+            Status
+        """
         return self._cur_status
     
     @property
@@ -102,6 +138,13 @@ class Task(object):
         return self._name
 
     def __lshift__(self, decorator):
+        """
+        Args:
+            decorator: TickDecorator or functional decorator
+
+        Returns:
+            Decorator
+        """
 
         if isinstance(TickDecorator, decorator):
             return decorator.decorate(self)
@@ -119,7 +162,15 @@ class StatusFilter(Filter):
 
         self._statuses = statuses
     
-    def check(self, node):
+    def check(self, node) -> bool:
+        """Filter based 
+
+        Args:
+            node
+
+        Returns:
+            bool
+        """
         if isinstance(node, Task):
             return node.status in self._statuses
         return False
@@ -174,10 +225,20 @@ class LinearPlanner(object):
     """
 
     def __init__(self, items: typing.List[Task]):
+        """initializer
+
+        Args:
+            items (typing.List[Task])
+        """
         self._items = items
         self._idx = 0
 
     def reset(self, items: list=None):
+        """Reset the planner to the start state
+
+        Args:
+            items (list, optional): Updated items to set the planner to. Defaults to None.
+        """
         self._idx = 0
         self._items = coalesce(items, self._items)
     
@@ -191,33 +252,57 @@ class LinearPlanner(object):
             raise IndexError(f"Index {idx} is out of range in {len(self._items)}")
         self._idx = idx
 
-    def end(self):
+    def end(self) -> bool:
+        """Advance the planner
+
+        Returns:
+            bool
+        """
         if self._idx == len(self._items):
             return True
         return False
     
-    def adv(self):
+    def adv(self) -> bool:
+        """Advance the planner
+
+        Returns:
+            bool
+        """
         if self._idx == len(self._items):
             return False
         self._idx += 1
         return True
     
     @property
-    def cur(self):
+    def cur(self) -> Task:
+        """
+        Returns:
+            Task
+        """
         if self._idx == len(self._items):
             return None
         return self._items[self._idx]
 
-    def rev(self):
+    def rev(self) -> bool:
+        """Reverse the planner
+
+        Returns:
+            bool
+        """
         if self._idx == 0:
             return False
         self._idx -= 1
         return True
 
     def clone(self):
+        """Clone the linear planner
+
+        Returns:
+            LinearPlanner
+        """
         return LinearPlanner([*self._items])
     
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._items)
 
 
@@ -234,9 +319,15 @@ def iterate_planner(planner: Planner) -> Iterator[Task]:
 
 
 class PlannerDecorator(Planner):
+    """Decorate the planner
+    """
 
     def __init__(self, planner: Planner):
+        """Planner
 
+        Args:
+            planner (Planner)
+        """
         self._planner = planner
 
     def adv(self):
@@ -712,8 +803,17 @@ class Discrete(State[V]):
 
 
 class FSM(StateMachine):
+    """Finite State Machine
+    """
 
     def __init__(self, start: Discrete, states: typing.Dict[str, Discrete], name: str=''):
+        """initializer
+
+        Args:
+            start (Discrete): Start state for the FSM
+            states (typing.Dict[str, Discrete]): Non-start states for the FSM
+            name (str, optional): _description_. Defaults to ''.
+        """
         super().__init__(start, states, name)
         self._cur_state: Discrete = self._start
         self._cur_state.reset()
@@ -723,11 +823,13 @@ class FSM(StateMachine):
         return [self._start] + [*self._states.values()]
     
     def reset(self):
+        """Reset the state machine"""
         
         self._cur_state = self._start
         self._start.reset()
 
     def tick(self):
+        """Execute the state machine"""
 
         emission = self._cur_state.update().emit(self._states)
         self._cur_state = emission.next_state
@@ -747,18 +849,31 @@ class FSM(StateMachine):
 
 
 class FSMState(Discrete):
+    """FSM that acts as a state
+    """
     
     def __init__(self, name: str, machine: FSM, state_link: StateLink):
+        """_summary_
+
+        Args:
+            name (str): Name of the state
+            machine (FSM): The FSM to execute
+            state_link (StateLink): A link between the states to execute
+        """
 
         super().__init__(name)
         self._machine = machine
         self._state_link = state_link
 
     def enter(self):
+        """Enter the state machine
+        """
 
         self._machine.reset()
 
     def update(self):
+        """Execute the state machine
+        """
 
         if self._machine.status == Status.DONE:
             return None
@@ -771,7 +886,11 @@ class FSMState(Discrete):
         return Emission(self, None)
 
     @property
-    def status(self):
+    def status(self) -> Status:
+        """
+        Returns:
+            Status: Current status of the state machine
+        """
         return self._machine.status
 
     def iterate(self, filter: Filter=None, deep: bool=True):
@@ -783,18 +902,34 @@ class FSMState(Discrete):
 
 
 class TaskState(Discrete):
+    """
+    Allows for a task to be treated as a state
+    """
     
     def __init__(self, task: Task, failure_to: StateVar, success_to: StateVar):
+        """initializer
+
+        Args:
+            task (Task): Task to treat as a state
+            failure_to (StateVar): Mapping from failed status to another state
+            success_to (StateVar): Mapping from success status to another state
+        """
 
         self._task = task
         self._failure_to = failure_to
         self._success_to = success_to
 
     def enter(self):
-
+        """Enter the state
+        """
         self._task.reset()
 
-    def update(self):
+    def update(self) -> Status:
+        """Update the 'state' by ticking the task
+
+        Returns:
+            Status
+        """
 
         if self._task.status == Status.DONE:
             return None
