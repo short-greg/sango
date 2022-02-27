@@ -17,7 +17,6 @@ from .nodes import (
 )
 
 
-
 class TestVals:
 
     def test_gets_value_with_no_annotation(self):

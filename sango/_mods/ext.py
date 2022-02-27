@@ -36,24 +36,10 @@ import typing
 from typing import Any, Generic, TypeVar
 from . import std
 from .std import (
-    Status, StateVar, TaskDecorator, TickDecorator, TickDecorator2nd,
-    Emission, StateID, StateLink
+    Status, StateVar, TaskDecorator, TickDecorator
 )
 from .nodes import ActionFunc, ConditionalFunc
-
-
-def vals(cls):
-
-    try:
-        annotations = cls.__annotations__
-    except AttributeError:
-        annotations = {}
-    d  = getattr(cls, '__dict__', {})
-
-    for var in [x for x in d.keys() if not x.startswith('__')]:
-        annotation = annotations.get(var, None)
-        val = getattr(cls, var)
-        yield var, annotation, val
+from .utils import vals
 
 
 @singledispatch
@@ -72,6 +58,8 @@ def _(val: Store, storage: Storage):
 
 
 class ArgFilter(ABC):
+    """Use to filter class members to find the TaskLoader members etc
+    """
 
     @abstractmethod
     def filter(self, name, annotation, value):
@@ -79,6 +67,8 @@ class ArgFilter(ABC):
 
 
 class TypeFilter(ArgFilter):
+    """Use to class members based on type
+    """
 
     def __init__(self, arg_type: typing.Type):
         self._arg_type = arg_type
@@ -88,7 +78,15 @@ class TypeFilter(ArgFilter):
 
 
 class TaskClassFilter(ArgFilter):
-    
+    """Use to TaskClasses
+
+    class composite(Composite):
+
+        @task # makes this not necessary
+        class t(Action):
+            pass
+    """
+
     def filter(self, name: str, annotation: typing.Type, value):
         return (
             (isinstance(value, TaskMeta) and issubclass(value, std.Task)) or
@@ -117,7 +115,6 @@ class ClassArgFilter(object):
             if self._run_filters(name, type_, value):
                 result_kwargs[name] = value
         return result_kwargs
-        
 
     def filter(self, cls):
         """Run the arg filter
@@ -907,13 +904,29 @@ def _(act: str, *args, **kwargs):
     )
 
 @singledispatch
-def failure(act, *args, **kwargs):
+def failure(act, *args, **kwargs) -> TaskLoader:
+    """Create a task that always fails
+
+    Args:
+        act (function)
+
+    Returns:
+        TaskLoader
+    """
     args = Args(*args, **kwargs)
     return TaskLoader(ActionFunc, args=Args(f=act, args=args, status_override=Status.FAILURE))
 
 
 @failure.register
-def _(act: str, *args, **kwargs):
+def _(act: str, *args, **kwargs) -> TaskLoader:
+    """Create a reference task that always fails 
+
+    Args:
+        act (str)
+
+    Returns:
+        TaskLoader
+    """
     factory  = MemberRefFactory(act, Args(*args, **kwargs))
     return TaskLoader(
         ActionFuncRef, args=Args(member_factory=factory, status_override=Status.FAILURE)

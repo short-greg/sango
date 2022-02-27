@@ -106,6 +106,8 @@ class fail_on_first(TickDecorator):
 
 
 class StatusMixin(object):
+    """Mixin for specfifying the status of a node
+    """
 
     @abstractproperty
     def status(self) -> Status:
@@ -113,6 +115,8 @@ class StatusMixin(object):
 
 
 class Running(StatusMixin):
+    """Running status mixin
+    """
 
     @property
     def status(self) -> Status:
@@ -120,6 +124,8 @@ class Running(StatusMixin):
 
 
 class Ready(StatusMixin):
+    """Ready status mixin
+    """
 
     @property
     def status(self) -> Status:
@@ -127,6 +133,8 @@ class Ready(StatusMixin):
 
 
 class Failure(StatusMixin):
+    """Failure status mixin
+    """
 
     @property
     def status(self) -> Status:
@@ -134,6 +142,8 @@ class Failure(StatusMixin):
 
 
 class Success(StatusMixin):
+    """Success status mixin
+    """
 
     @property
     def status(self) -> Status:
@@ -191,6 +201,8 @@ class ShufflePlanner(PlannerDecorator):
 
 
 class ActionFunc(Action):
+    """Action that executes a function passed in
+    """
     
     def __init__(self, name: str, f: typing.Callable, args: Args, status_override: Status=None):
         super().__init__(name)
@@ -206,7 +218,7 @@ class ActionFunc(Action):
 
 
 class ConditionalFunc(Conditional):
-    """Task that executes an action on the reference object
+    """Conditional that executes a function passed in
     """
     
     def __init__(self, name: str, f: typing.Callable, args: Args):

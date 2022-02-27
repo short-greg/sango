@@ -20,21 +20,27 @@ from dataclasses import dataclass
 
 
 class Status(Enum):
+    """The status of a task
+    """
 
-    FAILURE = 0
-    SUCCESS = 1
-    RUNNING = 2
-    READY = 3
-    DONE = 4
-    NONE = 5
+    FAILURE = 0  # the task failed
+    SUCCESS = 1  # the task succeeded
+    RUNNING = 2  # the task is runnning
+    READY = 3  # the task has not started
+    DONE = 4  # the task has already finished
+    NONE = 5  # the task has no state
 
     @property
     def done(self):
+        """Whether the task has finished
+        """
         return self == Status.FAILURE or self == Status.SUCCESS or self == Status.DONE
 
 
 class Filter(ABC):
-
+    """
+    Use to filter nodes in a tree
+    """
     @abstractmethod
     def check(self, node):
         raise NotImplementedError
@@ -44,58 +50,6 @@ class NullFilter(Filter):
 
     def check(self, node):
         return True
-
-
-class IntersectFilter(Filter):
-
-    def __init__(self, filters: typing.List[Filter]):
-        """initializer
-
-        Args:
-            filters (typing.List[Filter]): Filters to intersect
-        """
-        self._filters = filters
-    
-    def check(self, node) -> bool:
-        """Check if the node passes the filter
-
-        Args:
-            node: Node to filter
-
-        Returns:
-            bool
-        """
-
-        for filter in self._filters:
-            if not filter.check(node):
-                return False
-        return True
-
-
-class UnionFilter(Filter):
-
-    def __init__(self, filters: typing.List[Filter]):
-        """initializer
-
-        Args:
-            filters (typing.List[Filter]): Filters to intersect
-        """
-        self._filters = filters
-    
-    def check(self, node) -> bool:
-        """Check if the node passes the filter
-
-        Args:
-            node: Node to filter
-
-        Returns:
-            bool
-        """
-
-        for filter in self._filters:
-            if filter.check(node):
-                return True
-        return False
 
 
 class Task(object):
@@ -149,31 +103,12 @@ class Task(object):
         if isinstance(TickDecorator, decorator):
             return decorator.decorate(self)
         return decorator(self)
+    
+    def iterate(self, filter: Filter=None, deep: bool=True):
 
-    def iterate(self, filter: Filter=None, deep: bool=True) -> Iterator:
-        
-        # Hack to ensure this is an iterator
+        # hack to iterate on any task
         if False:
             yield None
-
-class StatusFilter(Filter):
-
-    def __init__(self, statuses: typing.Iterable):
-
-        self._statuses = statuses
-    
-    def check(self, node) -> bool:
-        """Filter based 
-
-        Args:
-            node
-
-        Returns:
-            bool
-        """
-        if isinstance(node, Task):
-            return node.status in self._statuses
-        return False
 
 
 Task.__call__ = Task.tick
@@ -662,12 +597,18 @@ V = TypeVar('V')
 
 
 class State(Generic[V]):
+    """Standard state in a machine
+    """
 
     def __init__(self, name: str=''):
         self._name = name
 
     @property
-    def name(self):
+    def name(self) -> str:
+        """
+        Returns:
+            str: Name of the state
+        """
         return self._name
 
     @abstractmethod
@@ -686,17 +627,38 @@ class State(Generic[V]):
 
 
 class StateID(object):
+    """A reference to a state. Used in emission as
+    part of the update function
+    """
 
     def __init__(self, ref: str):
-
+        """initializer
+        Args:
+            ref (str): The name of the state 
+        """
         self._ref = ref
     
     @property
-    def ref(self):
+    def ref(self) -> str:
+        """Reference of the ID
+
+        Returns:
+            str: _description_
+        """
         return self._ref
 
-    def lookup(self, states: typing.Dict[str, State]):
+    def lookup(self, states: typing.Dict[str, State]) -> State:
+        """Access the state referred to by this ID
 
+        Args:
+            states (typing.Dict[str, State]): States that are part of the caller
+
+        Raises:
+            KeyError: The state does not exist
+
+        Returns:
+            State
+        """
         try: 
             return states[self._ref]
         except KeyError:
@@ -737,14 +699,23 @@ class Emission(Generic[V]):
 
 
 class StateMachine(Task):
+    """StateMachine - Use to create 
+
+    Args:
+        Task (_type_): _description_
+    """
     
     def __init__(self, start: State, states: typing.Dict[str, State], name: str=''):
+        """
 
+        Args:
+            start (State): Start state
+            states (typing.Dict[str, State]): Dict of states and their names
+            name (str, optional): Name of the task. Defaults to ''.
+        """
         self._start = start
         self._states = states
         self._name = name
-        # self._store = store
-        # self._reference = reference
     
     def reset(self):
         pass
@@ -754,6 +725,15 @@ class StateMachine(Task):
         raise NotImplementedError
 
     def iterate(self, filter: Filter=None, deep: bool=True):
+        """iterate over the nodes in the state machine
+
+        Args:
+            filter (Filter, optional): Filter to use for iterating. Defaults to None.
+            deep (bool, optional): Whether to iterate to sub tasks. Defaults to True.
+
+        Yields:
+            State
+        """
         
         filter = filter or NullFilter()
         for state in self._states:
@@ -777,7 +757,7 @@ class StateLink(object):
 class Discrete(State[V]):
 
     def __init__(self, name: str=''):
-        """[summary]
+        """Discrete state
 
         Args:
             status (StateType, optional): Whether the state is a running state, final state, etc. 
