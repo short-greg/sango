@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from .std import StatusFilter, Sequence, Status, LinearPlanner, Conditional
+from .std import Sequence, Status, LinearPlanner, Conditional
 
 
 class TestStatus:
@@ -76,24 +76,25 @@ class TestIteration:
         nodes = [node for node in sequence3.iterate(deep=False)]
         assert len(nodes) == 2
 
-    def test_iterate_over_two_sequences_running_status(self):
-        sequence1 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
-        sequence2 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
-        sequence3 = Sequence([sequence1, sequence2])
-        sequence3.tick()
-        nodes = [node for node in sequence3.iterate(
-            StatusFilter([Status.RUNNING]
-        ), deep=True)]
+    # TODO: Move to test_process
+    # def test_iterate_over_two_sequences_running_status(self):
+    #     sequence1 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+    #     sequence2 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+    #     sequence3 = Sequence([sequence1, sequence2])
+    #     sequence3.tick()
+    #     nodes = [node for node in sequence3.iterate(
+    #         StatusFilter([Status.RUNNING]
+    #     ), deep=True)]
 
-        assert len(nodes) == 1
+    #     assert len(nodes) == 1
 
-    def test_iterate_over_two_sequences_running_status(self):
-        sequence1 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
-        sequence2 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
-        sequence3 = Sequence([sequence1, sequence2])
-        sequence3.tick()
-        nodes = [node for node in sequence3.iterate(
-            StatusFilter([Status.RUNNING, Status.SUCCESS]), 
-            deep=True)]
+    # def test_iterate_over_two_sequences_running_status(self):
+    #     sequence1 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+    #     sequence2 = Sequence([DummyPositive(name='x'), DummyPositive(name='y')])
+    #     sequence3 = Sequence([sequence1, sequence2])
+    #     sequence3.tick()
+    #     nodes = [node for node in sequence3.iterate(
+    #         StatusFilter([Status.RUNNING, Status.SUCCESS]), 
+    #         deep=True)]
 
-        assert len(nodes) == 2
+    #     assert len(nodes) == 2

@@ -8,9 +8,12 @@ from .ext import (
     var_, ClassArgFilter, TypeFilter, Fallback,
     Tree, task_, Parallel, loads, TaskLoader, loads_,
     actionf, condf, condvar,
-    Discrete, FSM, StateID, StateVar, state_,
+    Discrete, FSM, StateVar, state_,
     fsmstate, to_state, to_status, Status, 
-    TickDecorator2nd,  Emission
+    
+)
+from .std import (
+    TickDecorator2nd, Emission, StateID
 )
 from .nodes import (
     Running, Failure, Success, neg, succeed, fail, until, fail_on_first, succeed_on_first
