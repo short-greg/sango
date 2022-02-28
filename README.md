@@ -18,8 +18,26 @@ In addition to those standard tasks
 
 ## Diving Deeper
 
-For Sango, I aimed to have the following to make it easy to define trees.
+Sango has two main modules std (standard) and ext (extension). The standard module is for defining behavior trees in a 'typical' fashion.
 
+```
+sequence = std.Sequence([action1, action2, action3])
+```
+
+where each action is executed sequentially. This makes it easier to create behavior trees in routines or class methods.
+
+The ext module is for defining trees in a visual hierarchy using Python's class declaration syntax.
+
+```
+class sequence(ext.Sequence):
+  action1 = SomeAction
+  action2 = OtherAction
+  action3 = FinalAction
+```
+
+This makes it easier to define the tree in a hierarchy as it makes the hierarchy visual.
+
+The ext module has the following benefits
 * Visual hierarchy of the tasks in the tree: To make it easy to understand the logic
 * Cohesion between the tree structure and its tasks: To make it easy to understand and edit the tree
 * Easy way to pass data between nodes: To prevent coupling of tasks that should not be coupled
