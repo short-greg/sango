@@ -1,9 +1,9 @@
 from functools import wraps
-from .vars import ref_
+from ._vars import ref_
 import pytest
 
-from .vars import Storage
-from .ext import (
+from ._vars import Storage
+from ._ext import (
     vals, Action, Conditional, Sequence, task, 
     var_, ClassArgFilter, TypeFilter, Fallback,
     Tree, task_, Parallel, loads, TaskLoader, loads_,
@@ -12,10 +12,10 @@ from .ext import (
     fsmstate, to_state, to_status, Status, 
     
 )
-from .std import (
+from ._std import (
     TickDecorator2nd, Emission, StateID
 )
-from .nodes import (
+from ._nodes import (
     Running, Failure, Success, neg, succeed, fail, until, fail_on_first, succeed_on_first
 )
 

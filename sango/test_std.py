@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from .std import Sequence, Status, LinearPlanner, Conditional
+from ._std import Sequence, Status, LinearPlanner, Conditional
 
 
 class TestStatus:

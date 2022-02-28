@@ -1,5 +1,5 @@
 import typing
-from ._mods.std import Filter, Task
+from ._std import Filter, Task
 
 
 class IntersectFilter(Filter):

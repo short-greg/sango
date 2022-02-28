@@ -13,7 +13,7 @@ from enum import Enum
 import typing
 from abc import ABC, abstractmethod, abstractproperty
 from functools import wraps
-from .utils import coalesce
+from ._utils import coalesce
 from typing import Iterator
 from typing import Generic, TypeVar
 from dataclasses import dataclass

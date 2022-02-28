@@ -1,5 +1,5 @@
 import pytest
-from .vars import Shared, Storage, Var
+from ._vars import Shared, Storage, Var
 
 
 # TODO: UPDATE TEST

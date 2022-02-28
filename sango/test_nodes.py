@@ -1,5 +1,5 @@
-from .nodes import ShufflePlanner
-from .std import Conditional, LinearPlanner
+from ._nodes import ShufflePlanner
+from ._std import Conditional, LinearPlanner
 import random
 
 class DummyNegative(Conditional):

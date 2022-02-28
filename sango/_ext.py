@@ -29,17 +29,17 @@ from abc import ABC, abstractmethod, abstractproperty
 import typing
 from functools import singledispatch, singledispatchmethod
 from typing import Any, Generic, TypeVar
-from .vars import STORE_REF, Args, Ref, Storage, Store, Var, Shared, UNDEFINED
+from ._vars import STORE_REF, Args, Ref, Storage, Store, Var, Shared, UNDEFINED
 from abc import ABC, abstractmethod
 from functools import singledispatch
 import typing
 from typing import Any, Generic, TypeVar
-from . import std
-from .std import (
+from . import _std as std
+from ._std import (
     Status, StateVar, TaskDecorator, TickDecorator
 )
-from .nodes import ActionFunc, ConditionalFunc
-from .utils import vals
+from ._nodes import ActionFunc, ConditionalFunc
+from ._utils import vals
 
 
 @singledispatch
