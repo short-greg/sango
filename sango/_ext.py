@@ -299,7 +299,6 @@ class TreeMeta(TaskMeta):
     def _load_entry(cls, store, kw, reference):
 
         tasks = ClassArgFilter([TypeFilter(TaskLoader), TaskClassFilter()]).filter(cls)
-
         if 'entry' not in tasks:
             raise AttributeError(f'Task entry not defined for tree')
         entry = tasks['entry']
