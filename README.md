@@ -1,4 +1,4 @@
-# Sango - Intuitive development of complex procedures for AI and control
+# Sango - Intuitive creation of behavior trees in Python
 
 Behavior trees are a control algorithm commonly used in game AI and robotics. With *Sango*, separate high level logic from low level logic by using defining the tree with a visual hierarchy.
 
